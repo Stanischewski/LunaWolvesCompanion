@@ -12,4 +12,7 @@ export const config = {
   botSecret: requireEnv("BOT_SECRET"),
   apiUrl: process.env.API_URL ?? "http://localhost:3001",
   lunaGuildId: requireEnv("LUNA_GUILD_ID"),
+  // Optionale Channel-IDs für automatische Benachrichtigungen
+  raidChannelId: process.env.RAID_CHANNEL_ID,
+  officerChannelId: process.env.OFFICER_CHANNEL_ID,
 };

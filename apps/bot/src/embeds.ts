@@ -126,6 +126,43 @@ export function raidListEmbed(raids: RaidEvent[]): EmbedBuilder {
     .setTimestamp();
 }
 
+export function raidReminderEmbed(raid: RaidEvent, window: "24h" | "1h"): EmbedBuilder {
+  const icon = window === "24h" ? "📣" : "⏰";
+  const label = window === "24h" ? "Morgen" : "In 1 Stunde";
+  return new EmbedBuilder()
+    .setColor(window === "1h" ? 0xf59e0b : GUILD_COLOR)
+    .setTitle(`${icon} Raid-Erinnerung — ${label}!`)
+    .setDescription(`**${raid.title}** beginnt ${tsRel(raid.scheduledAt)}`)
+    .addFields(
+      { name: "Datum & Uhrzeit", value: ts(raid.scheduledAt), inline: true },
+      ...(raid.raidType ? [{ name: "Typ", value: raid.raidType, inline: true }] : []),
+      ...(raid.minIlvl ? [{ name: "Min. Item-Level", value: String(raid.minIlvl), inline: true }] : []),
+    )
+    .setTimestamp();
+}
+
+export function inactivityReportEmbed(members: MemberCharacter[]): EmbedBuilder {
+  if (members.length === 0) {
+    return new EmbedBuilder()
+      .setColor(0x22c55e)
+      .setTitle("✅ Wochenbericht — Alle aktiv")
+      .setDescription("Keine Mitglieder sind seit mehr als 14 Tagen inaktiv.")
+      .setTimestamp();
+  }
+  const lines = members.map((m) => {
+    const last = m.lastLogin ? tsRel(m.lastLogin) : "Nie eingeloggt";
+    const emoji = CLASS_EMOJI[m.class] ?? "❓";
+    return `${emoji} **${m.name}** — ${last}`;
+  });
+  return new EmbedBuilder()
+    .setColor(0xef4444)
+    .setTitle(`⚠️ Inaktivitäts-Wochenbericht — ${members.length} Mitglieder`)
+    .setDescription(
+      `Folgende Mitglieder waren **mehr als 14 Tage** nicht online:\n\n${lines.join("\n")}`,
+    )
+    .setTimestamp();
+}
+
 export function raidRosterEmbed(raid: RaidEvent): EmbedBuilder {
   const signups = raid.signups ?? [];
   const tanks = signups
