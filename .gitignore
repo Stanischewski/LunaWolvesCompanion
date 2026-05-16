@@ -22,5 +22,8 @@ Thumbs.db
 .vscode/settings.json
 .idea/
 
+# AI
+.claude
+
 # Credentials (niemals committen!)
 *-credentials.txt

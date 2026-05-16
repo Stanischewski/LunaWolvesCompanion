@@ -1,5 +1,5 @@
+import "dotenv/config";
 import Fastify from "fastify";
-import type { Guild } from "@guild/shared-types";
 
 const app = Fastify({ logger: true });
 
