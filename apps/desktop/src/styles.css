@@ -57,14 +57,9 @@ input:focus {
   border-color: #6366f1;
 }
 
-.buttons {
-  display: flex;
-  gap: 10px;
-  margin-top: 22px;
-}
-
 button {
-  flex: 1;
+  width: 100%;
+  margin-top: 12px;
   padding: 10px 14px;
   border: none;
   border-radius: 6px;
@@ -83,6 +78,42 @@ button.secondary {
 
 button:hover {
   filter: brightness(1.12);
+}
+
+.account {
+  margin-top: 24px;
+  padding: 14px 16px;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  background-color: #18181b;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.account-label {
+  font-size: 0.85rem;
+  color: #a1a1aa;
+}
+
+.badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-in {
+  background-color: rgba(20, 83, 45, 0.5);
+  color: #86efac;
+}
+
+.badge-out {
+  background-color: #27272a;
+  color: #a1a1aa;
 }
 
 .status {

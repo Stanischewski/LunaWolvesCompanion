@@ -7,6 +7,8 @@ use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_opener::OpenerExt;
+use tiny_http::{Header, Response, Server};
 
 // ===================== Konfiguration =====================
 
@@ -57,7 +59,7 @@ fn save_config_to_disk(app: &AppHandle, config: &Config) -> Result<(), String> {
 /// eines async-Kontextes aufgerufen werden darf.
 fn upload(config: &Config) -> Result<String, String> {
     if config.api_url.is_empty() || config.token.is_empty() {
-        return Err("API-URL und Token muessen gesetzt sein.".into());
+        return Err("Nicht angemeldet oder keine API-URL gesetzt.".into());
     }
     if config.saved_variables_path.is_empty() {
         return Err("Es ist keine SavedVariables-Datei konfiguriert.".into());
@@ -133,7 +135,6 @@ fn spawn_watcher(app: AppHandle) {
         loop {
             std::thread::sleep(POLL_INTERVAL);
 
-            // Aktuelle Konfiguration aus dem geteilten Zustand kopieren.
             let config = {
                 let state = app.state::<AppState>();
                 let guard = state.config.lock().unwrap();
@@ -143,7 +144,6 @@ fn spawn_watcher(app: AppHandle) {
                 continue;
             }
 
-            // Aenderungszeit lesen; existiert die Datei nicht, spaeter erneut versuchen.
             let modified = match std::fs::metadata(&config.saved_variables_path)
                 .and_then(|meta| meta.modified())
             {
@@ -169,21 +169,129 @@ fn spawn_watcher(app: AppHandle) {
     });
 }
 
+// ===================== Battle.net-Login (Loopback-OAuth) =====================
+
+/// Extrahiert den Wert des `token`-Query-Parameters aus einer URL wie "/?token=…".
+fn extract_token(url: &str) -> Option<String> {
+    let query = url.split('?').nth(1)?;
+    query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("token=").map(str::to_string))
+}
+
+/// Fuehrt den Login durch: startet einen lokalen Loopback-HTTP-Server, oeffnet
+/// den Browser auf den API-Startpunkt und wartet auf das zurueckgeleitete Token.
+fn run_login_flow(app: &AppHandle, api_url: &str) -> Result<String, String> {
+    // Lokaler HTTP-Server auf 127.0.0.1; Port 0 laesst das OS einen freien waehlen.
+    let server = Server::http("127.0.0.1:0")
+        .map_err(|e| format!("Lokaler Server konnte nicht gestartet werden: {e}"))?;
+    let port = server
+        .server_addr()
+        .to_ip()
+        .ok_or("Server-Adresse unbekannt")?
+        .port();
+
+    // Browser auf die API schicken — der Port sagt der API, wohin sie das
+    // fertige Token zurueckleiten soll.
+    let auth_url = format!("{}/auth/desktop?port={}", api_url.trim_end_matches('/'), port);
+    app.opener()
+        .open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Browser konnte nicht geoeffnet werden: {e}"))?;
+
+    // Auf die eine Rueckleitung warten (hoechstens 5 Minuten).
+    let request = server
+        .recv_timeout(Duration::from_secs(300))
+        .map_err(|e| format!("Fehler beim Warten auf die Anmeldung: {e}"))?
+        .ok_or("Zeitueberschreitung — keine Anmeldung empfangen.")?;
+
+    let token = extract_token(request.url());
+
+    // Dem Browser eine Abschlussseite zeigen.
+    let page = if token.is_some() {
+        "<!doctype html><meta charset=utf-8><title>Luna Wolves Agent</title>\
+         <body style='font-family:sans-serif;background:#09090b;color:#e4e4e7;padding:48px'>\
+         <h2>Anmeldung erfolgreich</h2><p>Du kannst dieses Fenster schliessen.</p></body>"
+    } else {
+        "<!doctype html><meta charset=utf-8><title>Luna Wolves Agent</title>\
+         <body style='font-family:sans-serif;background:#09090b;color:#e4e4e7;padding:48px'>\
+         <h2>Anmeldung fehlgeschlagen</h2><p>Es wurde kein Token empfangen.</p></body>"
+    };
+    let header = Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..])
+        .expect("gueltiger Header");
+    let _ = request.respond(Response::from_string(page).with_header(header));
+
+    token.ok_or_else(|| "Es wurde kein Token zurueckgeleitet.".to_string())
+}
+
 // ===================== Tauri Commands =====================
 // Commands sind Rust-Funktionen, die das Frontend per `invoke("name", ...)` aufruft.
 
-/// Liefert die gespeicherte Konfiguration ans Frontend.
-#[tauri::command]
-fn get_config(state: State<AppState>) -> Config {
-    state.config.lock().unwrap().clone()
+/// Sicht auf die Konfiguration fuer das Frontend — ohne das rohe Token.
+#[derive(Serialize)]
+struct ConfigView {
+    api_url: String,
+    saved_variables_path: String,
+    logged_in: bool,
 }
 
-/// Speichert neue Einstellungen — auf der Platte und im geteilten Zustand.
+/// Vom Einstellungsformular geschickte Felder.
+#[derive(Deserialize)]
+struct Settings {
+    api_url: String,
+    saved_variables_path: String,
+}
+
+/// Liefert API-URL, Dateipfad und Login-Status ans Frontend.
 #[tauri::command]
-fn save_config(app: AppHandle, state: State<AppState>, config: Config) -> Result<(), String> {
-    save_config_to_disk(&app, &config)?;
-    *state.config.lock().unwrap() = config;
-    Ok(())
+fn get_config(state: State<AppState>) -> ConfigView {
+    let config = state.config.lock().unwrap();
+    ConfigView {
+        api_url: config.api_url.clone(),
+        saved_variables_path: config.saved_variables_path.clone(),
+        logged_in: !config.token.is_empty(),
+    }
+}
+
+/// Speichert API-URL und Dateipfad; das Login-Token bleibt unveraendert.
+#[tauri::command]
+fn save_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<(), String> {
+    let mut config = state.config.lock().unwrap();
+    config.api_url = settings.api_url;
+    config.saved_variables_path = settings.saved_variables_path;
+    save_config_to_disk(&app, &config)
+}
+
+/// Startet den Battle.net-Login (vollautomatischer Loopback-Flow).
+#[tauri::command]
+fn start_login(app: AppHandle, state: State<AppState>) {
+    let api_url = state.config.lock().unwrap().api_url.trim().to_string();
+    if api_url.is_empty() {
+        emit_status(&app, "error", "Bitte zuerst die API-URL eintragen und speichern.");
+        return;
+    }
+    std::thread::spawn(move || {
+        emit_status(&app, "running", "Browser geoeffnet — bitte bei Battle.net anmelden …");
+        match run_login_flow(&app, &api_url) {
+            Ok(token) => {
+                let saved = {
+                    let state = app.state::<AppState>();
+                    let mut config = state.config.lock().unwrap();
+                    config.token = token;
+                    save_config_to_disk(&app, &config)
+                };
+                match saved {
+                    Ok(()) => {
+                        emit_status(&app, "ok", "Erfolgreich angemeldet.");
+                        let _ = app.emit("login-changed", true);
+                    }
+                    Err(err) => {
+                        emit_status(&app, "error", format!("Token speichern fehlgeschlagen: {err}"))
+                    }
+                }
+            }
+            Err(err) => emit_status(&app, "error", err),
+        }
+    });
 }
 
 /// Stoesst einen sofortigen Upload an ("Jetzt synchronisieren").
@@ -199,7 +307,12 @@ fn sync_now(app: AppHandle, state: State<AppState>) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_config, save_config, sync_now])
+        .invoke_handler(tauri::generate_handler![
+            get_config,
+            save_settings,
+            start_login,
+            sync_now
+        ])
         .setup(|app| {
             // AppHandle: ein klonbarer, thread-sicherer Griff auf die laufende App.
             let handle = app.handle().clone();

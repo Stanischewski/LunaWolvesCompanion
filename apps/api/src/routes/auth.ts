@@ -41,6 +41,17 @@ export async function authRoutes(app: FastifyInstance) {
       { expiresIn: "7d" }
     );
 
+    // Desktop-Agent: kam der Flow von /auth/desktop, wird das Token an den
+    // lokalen Loopback-Server des Agents weitergeleitet (Host fest 127.0.0.1).
+    const desktopPort = request.cookies.desktop_port;
+    if (desktopPort) {
+      reply.clearCookie("desktop_port", { path: "/" });
+      const port = Number(desktopPort);
+      if (Number.isInteger(port) && port >= 1024 && port <= 65535) {
+        return reply.redirect(`http://127.0.0.1:${port}/?token=${jwt}`);
+      }
+    }
+
     const frontendUrl = process.env.FRONTEND_URL;
     if (frontendUrl) {
       return reply.redirect(`${frontendUrl}/auth/callback?token=${jwt}`);
@@ -55,6 +66,23 @@ export async function authRoutes(app: FastifyInstance) {
     });
 
     return reply.send({ ok: true, bnetTag: player.bnetTag });
+  });
+
+  // Startpunkt fuer den Desktop-Agent: merkt sich den Loopback-Port in einem
+  // Cookie und startet dann den normalen Battle.net-OAuth-Flow.
+  app.get<{ Querystring: { port?: string } }>("/auth/desktop", async (request, reply) => {
+    const port = Number(request.query.port);
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+      return reply.status(400).send({ error: "Ungueltiger Port" });
+    }
+    reply.setCookie("desktop_port", String(port), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 600,
+    });
+    return reply.redirect("/auth/bnet");
   });
 
   app.get("/auth/me", { onRequest: [app.authenticate] }, async (request) => {

@@ -19,17 +19,21 @@
         <label for="api-url">API-URL</label>
         <input id="api-url" type="text" placeholder="http://localhost:3001" autocomplete="off" spellcheck="false" />
 
-        <label for="token">Zugangs-Token (JWT)</label>
-        <input id="token" type="password" placeholder="eyJ…" autocomplete="off" />
-
         <label for="sv-path">SavedVariables-Datei</label>
         <input id="sv-path" type="text" placeholder="C:\…\SavedVariables\LunaWolvesDB.lua" autocomplete="off" spellcheck="false" />
 
-        <div class="buttons">
-          <button type="submit">Speichern</button>
-          <button type="button" id="sync-now" class="secondary">Jetzt synchronisieren</button>
-        </div>
+        <button type="submit">Einstellungen speichern</button>
       </form>
+
+      <section class="account">
+        <div class="account-row">
+          <span class="account-label">Battle.net</span>
+          <span id="login-state" class="badge badge-out">Nicht angemeldet</span>
+        </div>
+        <button type="button" id="login-btn">Mit Battle.net anmelden</button>
+      </section>
+
+      <button type="button" id="sync-now" class="secondary">Jetzt synchronisieren</button>
 
       <div id="status" class="status status-idle">Bereit.</div>
     </main>
