@@ -4,6 +4,10 @@ import fastifyOAuth2 from "@fastify/oauth2";
 import fastifyJwt from "@fastify/jwt";
 import fastifyCookie from "@fastify/cookie";
 import { authRoutes } from "./routes/auth.js";
+import { playerRoutes } from "./routes/players.js";
+import { guildRoutes } from "./routes/guilds.js";
+import { characterRoutes } from "./routes/characters.js";
+import { raidRoutes } from "./routes/raids.js";
 
 const app = Fastify({ logger: true });
 
@@ -48,6 +52,10 @@ app.get("/api/v1/health", async () => {
 });
 
 await app.register(authRoutes);
+await app.register(playerRoutes, { prefix: "/api/v1" });
+await app.register(guildRoutes, { prefix: "/api/v1" });
+await app.register(characterRoutes, { prefix: "/api/v1" });
+await app.register(raidRoutes, { prefix: "/api/v1" });
 
 app.listen({ port: 3001, host: "0.0.0.0" }, (err, address) => {
   if (err) {
