@@ -2,11 +2,18 @@
 //! bei Aenderungen automatisch zum Gilden-Sync-Endpoint hoch.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, State, WindowEvent,
+};
 use tauri_plugin_opener::OpenerExt;
 use tiny_http::{Header, Response, Server};
 
@@ -380,6 +387,75 @@ pub fn run() {
 
             // Datei-Ueberwachung im Hintergrund starten.
             spawn_watcher(handle);
+
+            // Close-to-Tray: X schliesst das Fenster nicht, sondern versteckt es.
+            // is_quitting erlaubt dem Tray-Menue-Eintrag "Beenden" das echte Schliessen.
+            let is_quitting = Arc::new(AtomicBool::new(false));
+            let quit_check = is_quitting.clone();
+
+            let window = app.get_webview_window("main").unwrap();
+            let win = window.clone();
+            window.on_window_event(move |event| {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    if quit_check.load(Ordering::SeqCst) {
+                        return; // echtes Beenden — Fenster normal schliessen lassen
+                    }
+                    api.prevent_close();
+                    let _ = win.hide();
+                }
+            });
+
+            // System-Tray: Kontextmenue aufbauen und Tray-Icon einrichten.
+            let show_item = MenuItem::with_id(app, "show", "Fenster anzeigen", true, None::<&str>)?;
+            let sync_item = MenuItem::with_id(app, "sync", "Jetzt synchronisieren", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)?;
+            let menu = Menu::new(app)?;
+            menu.append(&show_item)?;
+            menu.append(&sync_item)?;
+            menu.append(&quit_item)?;
+
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("Luna Wolves Agent")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(move |app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                    "sync" => {
+                        let config = app.state::<AppState>().config.lock().unwrap().clone();
+                        upload_in_background(app.clone(), config);
+                    }
+                    "quit" => {
+                        // Flag setzen, damit on_window_event das Schliessen durchlaesst,
+                        // dann per win.close() beenden — gibt WebView2 Zeit zum Aufraeumen.
+                        is_quitting.store(true, Ordering::SeqCst);
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.close();
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
             Ok(())
         })
         .run(tauri::generate_context!())
