@@ -1,0 +1,19 @@
+{
+  "name": "@guild/lua-parser",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "node --import tsx --test src/lua-parser.test.ts",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}
