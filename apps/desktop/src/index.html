@@ -1,39 +1,38 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri App</title>
-    <script type="module" src="/main.js" defer></script>
+    <title>Luna Wolves Agent</title>
+    <link rel="stylesheet" href="styles.css" />
   </head>
-
   <body>
-    <main class="container">
-      <h1>Welcome to Tauri</h1>
+    <main>
+      <header>
+        <h1>Luna Wolves Agent</h1>
+        <p class="subtitle">
+          Synchronisiert deine WoW-Addon-Daten mit dem Gilden-Server.
+        </p>
+      </header>
 
-      <div class="row">
-        <a href="https://tauri.app" target="_blank">
-          <img src="/assets/tauri.svg" class="logo tauri" alt="Tauri logo" />
-        </a>
-        <a
-          href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"
-          target="_blank"
-        >
-          <img
-            src="/assets/javascript.svg"
-            class="logo vanilla"
-            alt="JavaScript logo"
-          />
-        </a>
-      </div>
-      <p>Click on the Tauri logo to learn more about the framework</p>
+      <form id="settings-form">
+        <label for="api-url">API-URL</label>
+        <input id="api-url" type="text" placeholder="http://localhost:3001" autocomplete="off" spellcheck="false" />
 
-      <form class="row" id="greet-form">
-        <input id="greet-input" placeholder="Enter a name..." />
-        <button type="submit">Greet</button>
+        <label for="token">Zugangs-Token (JWT)</label>
+        <input id="token" type="password" placeholder="eyJ…" autocomplete="off" />
+
+        <label for="sv-path">SavedVariables-Datei</label>
+        <input id="sv-path" type="text" placeholder="C:\…\SavedVariables\LunaWolvesDB.lua" autocomplete="off" spellcheck="false" />
+
+        <div class="buttons">
+          <button type="submit">Speichern</button>
+          <button type="button" id="sync-now" class="secondary">Jetzt synchronisieren</button>
+        </div>
       </form>
-      <p id="greet-msg"></p>
+
+      <div id="status" class="status status-idle">Bereit.</div>
     </main>
+    <script type="module" src="main.js"></script>
   </body>
 </html>
