@@ -26,6 +26,9 @@ importers:
       '@fastify/oauth2':
         specifier: ^8.2.0
         version: 8.2.0
+      '@guild/lua-parser':
+        specifier: workspace:*
+        version: link:../../packages/lua-parser
       '@guild/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types

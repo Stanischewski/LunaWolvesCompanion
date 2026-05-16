@@ -4,6 +4,9 @@ import { tokenize, type Token } from "./lexer.js";
 
 const KEYWORDS = new Set(["true", "false", "nil"]);
 
+/** Schutz gegen Stack-Overflow durch absichtlich tief verschachtelte Eingaben. */
+const MAX_DEPTH = 200;
+
 /**
  * Parst eine WoW-SavedVariables-Datei (Lua) in ein JSON-kompatibles Objekt.
  * Liefert eine Map aller globalen Variablen auf ihre Werte.
@@ -20,6 +23,7 @@ interface TableEntry {
 
 class Parser {
   private index = 0;
+  private depth = 0;
 
   constructor(private readonly tokens: Token[]) {}
 
@@ -79,6 +83,9 @@ class Parser {
   }
 
   private parseTable(): LuaValue {
+    if (++this.depth > MAX_DEPTH) {
+      this.error(`Maximale Verschachtelungstiefe von ${MAX_DEPTH} ueberschritten`);
+    }
     this.expectPunct("{");
     const entries: TableEntry[] = [];
     while (!this.isPunct("}")) {
@@ -91,6 +98,7 @@ class Parser {
       }
     }
     this.expectPunct("}");
+    this.depth--;
     return buildTable(entries);
   }
 

@@ -159,3 +159,13 @@ test("LuaParseError enthaelt Zeilen-Information", () => {
     assert.equal(err.line, 2);
   }
 });
+
+test("erlaubt moderate Verschachtelung", () => {
+  const nested = `T = ${"{".repeat(100)}${"}".repeat(100)}`;
+  assert.doesNotThrow(() => parseLua(nested));
+});
+
+test("wirft LuaParseError bei zu tiefer Verschachtelung", () => {
+  const tooDeep = `T = ${"{".repeat(500)}${"}".repeat(500)}`;
+  assert.throws(() => parseLua(tooDeep), LuaParseError);
+});

@@ -6,6 +6,7 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../../packages/lua-parser" },
     { "path": "../../packages/shared-types" }
   ]
 }

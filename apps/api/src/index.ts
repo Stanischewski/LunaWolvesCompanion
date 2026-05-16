@@ -8,6 +8,7 @@ import { playerRoutes } from "./routes/players.js";
 import { guildRoutes } from "./routes/guilds.js";
 import { characterRoutes } from "./routes/characters.js";
 import { raidRoutes } from "./routes/raids.js";
+import { syncRoutes } from "./routes/sync.js";
 
 const app = Fastify({ logger: true });
 
@@ -56,6 +57,7 @@ await app.register(playerRoutes, { prefix: "/api/v1" });
 await app.register(guildRoutes, { prefix: "/api/v1" });
 await app.register(characterRoutes, { prefix: "/api/v1" });
 await app.register(raidRoutes, { prefix: "/api/v1" });
+await app.register(syncRoutes, { prefix: "/api/v1" });
 
 app.listen({ port: 3001, host: "0.0.0.0" }, (err, address) => {
   if (err) {
