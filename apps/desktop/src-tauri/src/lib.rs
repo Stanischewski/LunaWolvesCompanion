@@ -1,7 +1,7 @@
 //! Luna Wolves Agent — ueberwacht die WoW-SavedVariables-Datei und laedt sie
 //! bei Aenderungen automatisch zum Gilden-Sync-Endpoint hoch.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
@@ -223,6 +223,53 @@ fn run_login_flow(app: &AppHandle, api_url: &str) -> Result<String, String> {
     token.ok_or_else(|| "Es wurde kein Token zurueckgeleitet.".to_string())
 }
 
+// ===================== WoW-Pfad-Erkennung =====================
+
+/// Sucht innerhalb einer WoW-Installation den ersten Account-Ordner mit einem
+/// `SavedVariables`-Verzeichnis und schlaegt den vollen Pfad zur LunaWolvesDB.lua
+/// vor. Die Datei selbst muss noch nicht existieren — sie wird erst vom Addon
+/// angelegt; entscheidend ist, dass der SavedVariables-Ordner vorhanden ist.
+fn sv_path_in_install(install: &Path) -> Option<String> {
+    // WoW-Retail-Layout: <install>/_retail_/WTF/Account/<ACCOUNT>/SavedVariables
+    let account_dir = install.join("_retail_").join("WTF").join("Account");
+    if !account_dir.is_dir() {
+        return None;
+    }
+    for entry in std::fs::read_dir(&account_dir).ok()?.flatten() {
+        let saved_variables = entry.path().join("SavedVariables");
+        if saved_variables.is_dir() {
+            return Some(
+                saved_variables
+                    .join("LunaWolvesDB.lua")
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+    }
+    None
+}
+
+/// Durchsucht die ueblichen Installationsorte aller Laufwerke (C–Z) nach einer
+/// WoW-Retail-Installation. Pruefungen auf nicht vorhandene Laufwerke/Ordner
+/// sind guenstig, daher ist das simple Abklappern der Kandidaten ausreichend.
+fn detect_sv_path() -> Option<String> {
+    let suffixes = [
+        "World of Warcraft",
+        r"Games\World of Warcraft",
+        r"Program Files (x86)\World of Warcraft",
+        r"Program Files\World of Warcraft",
+    ];
+    for drive in 'C'..='Z' {
+        for suffix in suffixes {
+            let root = format!("{drive}:\\{suffix}");
+            if let Some(path) = sv_path_in_install(Path::new(&root)) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
 // ===================== Tauri Commands =====================
 // Commands sind Rust-Funktionen, die das Frontend per `invoke("name", ...)` aufruft.
 
@@ -301,6 +348,13 @@ fn sync_now(app: AppHandle, state: State<AppState>) {
     upload_in_background(app, config);
 }
 
+/// Sucht automatisch nach dem SavedVariables-Pfad ("Automatisch suchen").
+#[tauri::command]
+fn detect_saved_variables_path() -> Result<String, String> {
+    detect_sv_path()
+        .ok_or_else(|| "Keine WoW-Installation gefunden. Bitte den Pfad manuell eintragen.".into())
+}
+
 // ===================== App-Einstieg =====================
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -311,7 +365,8 @@ pub fn run() {
             get_config,
             save_settings,
             start_login,
-            sync_now
+            sync_now,
+            detect_saved_variables_path
         ])
         .setup(|app| {
             // AppHandle: ein klonbarer, thread-sicherer Griff auf die laufende App.

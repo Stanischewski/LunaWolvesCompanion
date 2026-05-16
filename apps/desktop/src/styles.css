@@ -9,40 +9,45 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
 }
 
-main {
-  max-width: 560px;
-  margin: 0 auto;
-  padding: 32px 28px;
+/* Klassenselektoren ueberschreiben die UA-Regel fuer [hidden] — daher explizit. */
+[hidden] {
+  display: none !important;
 }
 
-header h1 {
+h1 {
   margin: 0 0 4px;
   font-size: 1.4rem;
 }
 
+h2 {
+  margin: 0 0 20px;
+  font-size: 1.1rem;
+}
+
 .subtitle {
-  margin: 0 0 28px;
+  margin: 0 0 24px;
   color: #a1a1aa;
   font-size: 0.9rem;
 }
 
-form {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 label {
-  margin-top: 14px;
+  display: block;
+  margin: 14px 0 6px;
   font-size: 0.8rem;
   color: #a1a1aa;
 }
 
 input {
+  width: 100%;
   padding: 9px 11px;
   border: 1px solid #27272a;
   border-radius: 6px;
@@ -80,26 +85,144 @@ button:hover {
   filter: brightness(1.12);
 }
 
-.account {
-  margin-top: 24px;
-  padding: 14px 16px;
+/* ===================== Login-Ansicht ===================== */
+
+.login-view:not([hidden]) {
+  display: flex;
+}
+
+.login-view {
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+}
+
+/* ===================== Hauptansicht (Sidebar + Inhalt) ===================== */
+
+.app-view:not([hidden]) {
+  display: flex;
+}
+
+.app-view {
+  min-height: 100vh;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 180px;
+  flex-shrink: 0;
+  padding: 20px 14px;
+  border-right: 1px solid #27272a;
+  background-color: #0c0c0e;
+}
+
+.sidebar-brand {
+  margin-bottom: 24px;
+  padding: 0 8px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-item {
+  width: 100%;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 6px;
+  background-color: transparent;
+  color: #a1a1aa;
+  font-weight: 500;
+  text-align: left;
+}
+
+.nav-item:hover {
+  filter: none;
+  background-color: #18181b;
+  color: #e4e4e7;
+}
+
+.nav-item.active {
+  background-color: #18181b;
+  color: #e4e4e7;
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding: 0 8px;
+}
+
+.content {
+  flex: 1;
+  padding: 28px 32px;
+  overflow-y: auto;
+}
+
+/* ===================== Karten / Info-Zeilen ===================== */
+
+.card {
+  padding: 0 16px;
   border: 1px solid #27272a;
   border-radius: 8px;
   background-color: #18181b;
 }
 
-.account-row {
+.card-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
 }
 
-.account-label {
+.card-row + .card-row {
+  border-top: 1px solid #27272a;
+}
+
+.card-label {
   font-size: 0.85rem;
   color: #a1a1aa;
 }
 
+.card-value {
+  font-size: 0.85rem;
+  text-align: right;
+  word-break: break-all;
+}
+
+/* ===================== Pfad-Eingabe mit Button ===================== */
+
+.input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.input-row input {
+  flex: 1;
+}
+
+.input-row button {
+  width: auto;
+  flex-shrink: 0;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+/* ===================== Abzeichen ===================== */
+
 .badge {
+  display: inline-block;
   padding: 3px 10px;
   border-radius: 999px;
   font-size: 0.75rem;
@@ -115,6 +238,8 @@ button:hover {
   background-color: #27272a;
   color: #a1a1aa;
 }
+
+/* ===================== Statusmeldung ===================== */
 
 .status {
   margin-top: 24px;

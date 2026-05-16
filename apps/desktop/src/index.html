@@ -7,36 +7,77 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main>
-      <header>
-        <h1>Luna Wolves Agent</h1>
-        <p class="subtitle">
-          Synchronisiert deine WoW-Addon-Daten mit dem Gilden-Server.
-        </p>
-      </header>
+    <!-- Login-Ansicht: sichtbar, solange nicht angemeldet -->
+    <div id="login-view" class="login-view">
+      <main class="login-card">
+        <header>
+          <h1>Luna Wolves Agent</h1>
+          <p class="subtitle">
+            Synchronisiert deine WoW-Addon-Daten mit dem Gilden-Server.
+          </p>
+        </header>
 
-      <form id="settings-form">
-        <label for="api-url">API-URL</label>
-        <input id="api-url" type="text" placeholder="http://localhost:3001" autocomplete="off" spellcheck="false" />
+        <label for="login-api-url">API-URL</label>
+        <input id="login-api-url" type="text" placeholder="http://localhost:3001" autocomplete="off" spellcheck="false" />
 
-        <label for="sv-path">SavedVariables-Datei</label>
-        <input id="sv-path" type="text" placeholder="C:\…\SavedVariables\LunaWolvesDB.lua" autocomplete="off" spellcheck="false" />
+        <button type="button" id="login-btn">Mit Battle.net anmelden</button>
 
-        <button type="submit">Einstellungen speichern</button>
-      </form>
+        <div id="login-status" class="status status-idle">Bereit.</div>
+      </main>
+    </div>
 
-      <section class="account">
-        <div class="account-row">
-          <span class="account-label">Battle.net</span>
+    <!-- Hauptansicht: sichtbar nach erfolgreicher Anmeldung -->
+    <div id="app-view" class="app-view" hidden>
+      <aside class="sidebar">
+        <div class="sidebar-brand">Luna Wolves</div>
+        <nav class="sidebar-nav">
+          <button type="button" class="nav-item" data-tab="status">Status</button>
+          <button type="button" class="nav-item" data-tab="settings">Einstellungen</button>
+        </nav>
+        <div class="sidebar-foot">
           <span id="login-state" class="badge badge-out">Nicht angemeldet</span>
         </div>
-        <button type="button" id="login-btn">Mit Battle.net anmelden</button>
-      </section>
+      </aside>
 
-      <button type="button" id="sync-now" class="secondary">Jetzt synchronisieren</button>
+      <main class="content">
+        <!-- Reiter: Status -->
+        <section id="tab-status" class="tab-panel">
+          <h2>Status</h2>
+          <div class="card">
+            <div class="card-row">
+              <span class="card-label">Server</span>
+              <span id="status-api-url" class="card-value">&mdash;</span>
+            </div>
+            <div class="card-row">
+              <span class="card-label">SavedVariables</span>
+              <span id="status-sv-path" class="card-value">&mdash;</span>
+            </div>
+          </div>
+          <button type="button" id="sync-now">Jetzt synchronisieren</button>
+        </section>
 
-      <div id="status" class="status status-idle">Bereit.</div>
-    </main>
+        <!-- Reiter: Einstellungen -->
+        <section id="tab-settings" class="tab-panel" hidden>
+          <h2>Einstellungen</h2>
+          <form id="settings-form">
+            <label for="api-url">API-URL</label>
+            <input id="api-url" type="text" placeholder="http://localhost:3001" autocomplete="off" spellcheck="false" />
+
+            <label for="sv-path">SavedVariables-Datei</label>
+            <div class="input-row">
+              <input id="sv-path" type="text" placeholder="C:\…\SavedVariables\LunaWolvesDB.lua" autocomplete="off" spellcheck="false" />
+              <button type="button" id="detect-btn" class="secondary">Automatisch suchen</button>
+            </div>
+
+            <button type="submit">Einstellungen speichern</button>
+          </form>
+        </section>
+
+        <!-- Statuszeile: ueber beide Reiter hinweg sichtbar -->
+        <div id="status" class="status status-idle">Bereit.</div>
+      </main>
+    </div>
+
     <script type="module" src="main.js"></script>
   </body>
 </html>
