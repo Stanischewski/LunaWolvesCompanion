@@ -41,6 +41,10 @@ await app.register(fastifyOAuth2, {
 });
 
 app.decorate("authenticate", async function (request: any, reply: any) {
+  const botSecret = process.env.BOT_SECRET;
+  if (botSecret && request.headers["x-bot-secret"] === botSecret) {
+    return;
+  }
   try {
     await request.jwtVerify();
   } catch {
