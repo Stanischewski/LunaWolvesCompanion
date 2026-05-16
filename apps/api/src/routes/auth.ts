@@ -41,6 +41,11 @@ export async function authRoutes(app: FastifyInstance) {
       { expiresIn: "7d" }
     );
 
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (frontendUrl) {
+      return reply.redirect(`${frontendUrl}/auth/callback?token=${jwt}`);
+    }
+
     reply.setCookie("token", jwt, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

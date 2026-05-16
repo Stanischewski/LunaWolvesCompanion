@@ -4,6 +4,10 @@ import { guilds } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 
 export async function guildRoutes(app: FastifyInstance) {
+  app.get("/guilds", async () => {
+    return db.query.guilds.findMany();
+  });
+
   app.post<{
     Body: { name: string; realm: string; faction: "alliance" | "horde" };
   }>("/guilds", { onRequest: [app.authenticate] }, async (request, reply) => {
