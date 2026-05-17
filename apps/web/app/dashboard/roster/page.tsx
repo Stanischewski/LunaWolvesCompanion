@@ -7,6 +7,10 @@ interface Guild {
   faction: string;
 }
 
+interface PlayerChar {
+  guild: Guild | null;
+}
+
 interface Member {
   id: string;
   name: string;
@@ -39,9 +43,20 @@ export default async function RosterPage() {
   let members: Member[] = [];
 
   try {
-    const guilds = await apiFetch<Guild[]>("/guilds");
-    if (guilds.length > 0) {
-      guild = guilds[0];
+    // Gilde aus den eigenen Characters ableiten — robuster als guilds[0],
+    // weil es mehrere Gilden-Einträge in der DB geben kann.
+    const player = await apiFetch<{ characters: PlayerChar[] }>("/players/me").catch(() => null);
+    const guildFromPlayer = player?.characters.find((c) => c.guild)?.guild ?? null;
+
+    if (guildFromPlayer) {
+      guild = guildFromPlayer;
+    } else {
+      // Fallback: erste Gilde aus der DB (z.B. wenn noch kein Character verknüpft)
+      const guilds = await apiFetch<Guild[]>("/guilds");
+      if (guilds.length > 0) guild = guilds[0];
+    }
+
+    if (guild) {
       members = await apiFetch<Member[]>(`/guilds/${guild.id}/members`);
     }
   } catch {}
