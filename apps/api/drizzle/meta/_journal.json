@@ -15,6 +15,13 @@
       "when": 1779053757356,
       "tag": "0001_tan_black_bolt",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779055126661,
+      "tag": "0002_many_paladin",
+      "breakpoints": true
     }
   ]
 }

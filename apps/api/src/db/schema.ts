@@ -7,6 +7,7 @@ import {
   timestamp,
   jsonb,
   primaryKey,
+  unique,
 } from "drizzle-orm/pg-core";
 
 export const factionEnum = pgEnum("faction", ["alliance", "horde"]);
@@ -103,3 +104,73 @@ export const raidSignups = pgTable(
   },
   (t) => [primaryKey({ columns: [t.raidEventId, t.characterId] })],
 );
+
+// === DKP-System ===
+
+export const dkpEntryTypeEnum = pgEnum("dkp_entry_type", [
+  "manual",
+  "boss",
+  "spend",
+  "correction",
+]);
+
+export const dkpEntries = pgTable(
+  "dkp_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    guildId: uuid("guild_id")
+      .notNull()
+      .references(() => guilds.id, { onDelete: "cascade" }),
+    addonEntryId: varchar("addon_entry_id", { length: 128 }).notNull(),
+    playerName: varchar("player_name", { length: 64 }).notNull(),
+    delta: integer("delta").notNull(),
+    reason: varchar("reason", { length: 256 }).notNull().default(""),
+    entryType: dkpEntryTypeEnum("entry_type").notNull(),
+    officerName: varchar("officer_name", { length: 64 }).notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    source: varchar("source", { length: 16 }).notNull().default("addon"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("dkp_entries_guild_addon_id").on(t.guildId, t.addonEntryId)],
+);
+
+export const dkpStandings = pgTable(
+  "dkp_standings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    guildId: uuid("guild_id")
+      .notNull()
+      .references(() => guilds.id, { onDelete: "cascade" }),
+    playerName: varchar("player_name", { length: 64 }).notNull(),
+    current: integer("current").notNull().default(0),
+    lifetime: integer("lifetime").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("dkp_standings_guild_player").on(t.guildId, t.playerName)],
+);
+
+export const dkpTombstones = pgTable(
+  "dkp_tombstones",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    guildId: uuid("guild_id")
+      .notNull()
+      .references(() => guilds.id, { onDelete: "cascade" }),
+    playerName: varchar("player_name", { length: 64 }).notNull(),
+    deletedBy: varchar("deleted_by", { length: 64 }).notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [unique("dkp_tombstones_guild_player").on(t.guildId, t.playerName)],
+);
+
+export const dkpSeasons = pgTable("dkp_seasons", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  guildId: uuid("guild_id")
+    .notNull()
+    .references(() => guilds.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 128 }).notNull(),
+  archivedBy: varchar("archived_by", { length: 64 }).notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }).notNull(),
+  snapshotData: jsonb("snapshot_data").notNull(),
+});

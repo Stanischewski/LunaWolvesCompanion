@@ -7,6 +7,10 @@ import {
   addonSnapshots,
   raidEvents,
   raidSignups,
+  dkpEntries,
+  dkpStandings,
+  dkpTombstones,
+  dkpSeasons,
 } from "./schema.js";
 
 export const playersRelations = relations(players, ({ many }) => ({
@@ -18,6 +22,10 @@ export const guildsRelations = relations(guilds, ({ many }) => ({
   characters: many(characters),
   raidEvents: many(raidEvents),
   addonSnapshots: many(addonSnapshots),
+  dkpEntries: many(dkpEntries),
+  dkpStandings: many(dkpStandings),
+  dkpTombstones: many(dkpTombstones),
+  dkpSeasons: many(dkpSeasons),
 }));
 
 export const charactersRelations = relations(characters, ({ one, many }) => ({
@@ -44,4 +52,20 @@ export const raidEventsRelations = relations(raidEvents, ({ one, many }) => ({
 export const raidSignupsRelations = relations(raidSignups, ({ one }) => ({
   raidEvent: one(raidEvents, { fields: [raidSignups.raidEventId], references: [raidEvents.id] }),
   character: one(characters, { fields: [raidSignups.characterId], references: [characters.id] }),
+}));
+
+export const dkpEntriesRelations = relations(dkpEntries, ({ one }) => ({
+  guild: one(guilds, { fields: [dkpEntries.guildId], references: [guilds.id] }),
+}));
+
+export const dkpStandingsRelations = relations(dkpStandings, ({ one }) => ({
+  guild: one(guilds, { fields: [dkpStandings.guildId], references: [guilds.id] }),
+}));
+
+export const dkpTombstonesRelations = relations(dkpTombstones, ({ one }) => ({
+  guild: one(guilds, { fields: [dkpTombstones.guildId], references: [guilds.id] }),
+}));
+
+export const dkpSeasonsRelations = relations(dkpSeasons, ({ one }) => ({
+  guild: one(guilds, { fields: [dkpSeasons.guildId], references: [guilds.id] }),
 }));
