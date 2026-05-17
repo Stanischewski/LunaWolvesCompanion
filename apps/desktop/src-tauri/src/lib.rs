@@ -370,6 +370,16 @@ fn start_login(app: AppHandle, state: State<AppState>) {
     });
 }
 
+/// Loescht das gespeicherte Token und meldet den Nutzer ab.
+#[tauri::command]
+fn logout(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    let mut config = state.config.lock().unwrap();
+    config.token = String::new();
+    save_config_to_disk(&app, &config)?;
+    let _ = app.emit("login-changed", false);
+    Ok(())
+}
+
 /// Stoesst einen sofortigen Upload an ("Jetzt synchronisieren").
 #[tauri::command]
 fn sync_now(app: AppHandle, state: State<AppState>) {
@@ -394,6 +404,7 @@ pub fn run() {
             get_config,
             save_settings,
             start_login,
+            logout,
             sync_now,
             detect_saved_variables_path
         ])

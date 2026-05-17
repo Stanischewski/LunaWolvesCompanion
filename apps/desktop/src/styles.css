@@ -161,6 +161,27 @@ button:hover {
 .sidebar-foot {
   margin-top: auto;
   padding: 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.logout-btn {
+  width: 100%;
+  margin-top: 0;
+  padding: 6px 10px;
+  background-color: transparent;
+  border: 1px solid #3f3f46;
+  color: #71717a;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.logout-btn:hover {
+  filter: none;
+  background-color: #18181b;
+  color: #e4e4e7;
+  border-color: #52525b;
 }
 
 .content {

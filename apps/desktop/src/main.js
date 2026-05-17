@@ -131,6 +131,14 @@ window.addEventListener("DOMContentLoaded", () => {
     invoke("sync_now").catch((err) => setStatus("error", `Fehler: ${err}`));
   });
 
+  document.querySelector("#logout-btn").addEventListener("click", async () => {
+    try {
+      await invoke("logout");
+    } catch (err) {
+      setStatus("error", `Abmelden fehlgeschlagen: ${err}`);
+    }
+  });
+
   for (const item of navItems) {
     item.addEventListener("click", () => showTab(item.dataset.tab));
   }
