@@ -458,11 +458,12 @@ guild-companion/
 - Raider.IO / Warcraftlogs Enrichment
 - Spieler-Vergleichs-Feature
 
-### Phase 5 — Mobile und Polish (3–4 Wochen)
-- React Native Mobile App
-- Push Notifications
-- Öffentliche Gildenprofile (SEO-optimiert)
-- Onboarding-Flow für neue Gildenmitglieder
+> ***Pausiert: Wird später entwickelt***
+> ### Phase 5 — Mobile und Polish (3–4 Wochen)
+> - React Native Mobile App
+> - Push Notifications
+> - Öffentliche Gildenprofile (SEO-optimiert)
+> - Onboarding-Flow für neue Gildenmitglieder
 
 
 ---
