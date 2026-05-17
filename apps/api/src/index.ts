@@ -10,6 +10,7 @@ import { guildRoutes } from "./routes/guilds.js";
 import { characterRoutes } from "./routes/characters.js";
 import { raidRoutes } from "./routes/raids.js";
 import { syncRoutes } from "./routes/sync.js";
+import { dkpRoutes } from "./routes/dkp.js";
 import { setupSocketHandlers } from "./ws/socket.js";
 import { enrichMPlusScores } from "./jobs/raiderio.js";
 
@@ -75,6 +76,7 @@ await app.register(guildRoutes, { prefix: "/api/v1" });
 await app.register(characterRoutes, { prefix: "/api/v1" });
 await app.register(raidRoutes, { prefix: "/api/v1" });
 await app.register(syncRoutes, { prefix: "/api/v1" });
+await app.register(dkpRoutes, { prefix: "/api/v1" });
 
 app.listen({ port: 3001, host: "0.0.0.0" }, (err, address) => {
   if (err) {
