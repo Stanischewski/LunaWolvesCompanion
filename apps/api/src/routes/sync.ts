@@ -4,7 +4,7 @@ import { parseLua, LuaParseError } from "@guild/lua-parser";
 import type { LuaValue } from "@guild/lua-parser";
 import type { WowClass } from "@guild/shared-types";
 import { db } from "../db/index.js";
-import { guilds, characters, addonSnapshots, activityLogs, dkpEntries, dkpStandings, dkpTombstones } from "../db/schema.js";
+import { guilds, characters, addonSnapshots, activityLogs, dkpEntries, dkpStandings, dkpTombstones, players } from "../db/schema.js";
 
 /**
  * Sync Service — Addon-Datenupload (Phase 2).
@@ -62,6 +62,35 @@ interface AddonTombstone {
   player: string;
   timestamp: number;
   officer: string;
+}
+
+interface AddonVersionEntry {
+  name: string;
+  realm: string;
+  battleTag: string;
+}
+
+function parseVersions(rootValue: LuaValue): AddonVersionEntry[] {
+  if (!isLuaObject(rootValue)) return [];
+  const versionsRaw = rootValue.Versions;
+  if (!isLuaObject(versionsRaw)) return [];
+
+  const result: AddonVersionEntry[] = [];
+  for (const [fullName, raw] of Object.entries(versionsRaw)) {
+    if (!isLuaObject(raw)) continue;
+    const battleTag = raw.battleTag;
+    if (typeof battleTag !== "string" || !battleTag) continue;
+
+    // fullName-Format: "Name-Realm"
+    const dashIdx = fullName.indexOf("-");
+    if (dashIdx <= 0) continue;
+    const name = fullName.slice(0, dashIdx);
+    const realm = fullName.slice(dashIdx + 1);
+    if (!name || !realm) continue;
+
+    result.push({ name, realm, battleTag });
+  }
+  return result;
 }
 
 interface AddonMember {
@@ -430,6 +459,33 @@ export async function syncRoutes(app: FastifyInstance) {
           }
         }
 
+        // Auto-Linking: Versions-BattleTags mit players.bnetTag abgleichen
+        const versionEntries = parseVersions(rawData);
+        let charactersLinked = 0;
+        for (const entry of versionEntries) {
+          // Nur Characters dieser Gilde berücksichtigen
+          const character = await tx.query.characters.findFirst({
+            where: and(
+              eq(characters.guildId, guild.id),
+              eq(characters.name, entry.name),
+              eq(characters.realm, entry.realm),
+              isNull(characters.playerId),
+            ),
+          });
+          if (!character) continue;
+
+          const player = await tx.query.players.findFirst({
+            where: eq(players.bnetTag, entry.battleTag),
+          });
+          if (!player) continue;
+
+          await tx
+            .update(characters)
+            .set({ playerId: player.id })
+            .where(eq(characters.id, character.id));
+          charactersLinked++;
+        }
+
         return {
           snapshotId: snapshot.id,
           guild,
@@ -438,6 +494,7 @@ export async function syncRoutes(app: FastifyInstance) {
           dkpEntriesInserted,
           dkpTombstonesInserted,
           dkpPlayersRecalculated: dkpAffectedPlayers.size,
+          charactersLinked,
         };
       });
 
@@ -491,6 +548,7 @@ export async function syncRoutes(app: FastifyInstance) {
         dkpEntriesInserted: result.dkpEntriesInserted,
         dkpTombstonesInserted: result.dkpTombstonesInserted,
         dkpPlayersRecalculated: result.dkpPlayersRecalculated,
+        charactersLinked: result.charactersLinked,
         pendingWebEntries,
       });
     },
