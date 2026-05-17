@@ -54,9 +54,17 @@ export default async function StatsPage() {
   let stats: StatsResponse | null = null;
 
   try {
-    const guilds = await apiFetch<Guild[]>("/guilds");
-    if (guilds.length > 0) {
-      guild = guilds[0];
+    const player = await apiFetch<{ characters: { guild: Guild | null }[] }>("/players/me").catch(() => null);
+    const guildFromPlayer = player?.characters.find((c) => c.guild)?.guild ?? null;
+
+    if (guildFromPlayer) {
+      guild = guildFromPlayer;
+    } else {
+      const guilds = await apiFetch<Guild[]>("/guilds");
+      if (guilds.length > 0) guild = guilds[0];
+    }
+
+    if (guild) {
       stats = await apiFetch<StatsResponse>(`/guilds/${guild.id}/stats`);
     }
   } catch {}
