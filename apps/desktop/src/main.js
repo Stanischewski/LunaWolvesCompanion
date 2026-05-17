@@ -144,4 +144,14 @@ window.addEventListener("DOMContentLoaded", () => {
   listen("login-changed", (event) => {
     applyLoginState(event.payload === true);
   });
+  // Ausstehende Web-DKP-Eintraege, die noch nicht im Addon angekommen sind.
+  listen("pending-entries", (event) => {
+    const count = event.payload;
+    const banner = document.querySelector("#pending-banner");
+    const text = document.querySelector("#pending-text");
+    if (banner && text) {
+      text.textContent = `${count} neue DKP-Eintrag${count === 1 ? "" : "einträge"} aus der Web-App — werden beim nächsten WoW-Login geladen.`;
+      banner.hidden = false;
+    }
+  });
 });

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { eq, and, desc, sql, gt } from "drizzle-orm";
+import { eq, and, desc, sql, gt, isNull } from "drizzle-orm";
 import { parseLua, LuaParseError } from "@guild/lua-parser";
 import type { LuaValue } from "@guild/lua-parser";
 import type { WowClass } from "@guild/shared-types";
@@ -455,6 +455,32 @@ export async function syncRoutes(app: FastifyInstance) {
         });
       }
 
+      // Rückkanal: ausstehende Web-Einträge zusammenstellen und als geliefert markieren
+      const pendingWebEntries = await db
+        .select()
+        .from(dkpEntries)
+        .where(
+          and(
+            eq(dkpEntries.guildId, result.guild.id),
+            eq(dkpEntries.source, "web"),
+            isNull(dkpEntries.addonSyncedAt),
+          ),
+        )
+        .orderBy(dkpEntries.occurredAt);
+
+      if (pendingWebEntries.length > 0) {
+        await db
+          .update(dkpEntries)
+          .set({ addonSyncedAt: new Date() })
+          .where(
+            and(
+              eq(dkpEntries.guildId, result.guild.id),
+              eq(dkpEntries.source, "web"),
+              isNull(dkpEntries.addonSyncedAt),
+            ),
+          );
+      }
+
       return reply.status(201).send({
         snapshotId: result.snapshotId,
         guild: { id: result.guild.id, name: result.guild.name, realm: result.guild.realm },
@@ -465,6 +491,7 @@ export async function syncRoutes(app: FastifyInstance) {
         dkpEntriesInserted: result.dkpEntriesInserted,
         dkpTombstonesInserted: result.dkpTombstonesInserted,
         dkpPlayersRecalculated: result.dkpPlayersRecalculated,
+        pendingWebEntries,
       });
     },
   );
@@ -491,6 +518,41 @@ export async function syncRoutes(app: FastifyInstance) {
         .where(eq(characters.guildId, request.params.guildId))
         .orderBy(desc(activityLogs.recordedAt))
         .limit(limit);
+    },
+  );
+
+  app.get<{ Params: { guildId: string } }>(
+    "/guilds/:guildId/sync/pending-entries",
+    { onRequest: [app.authenticate] },
+    async (request) => {
+      const { guildId } = request.params;
+
+      const pending = await db
+        .select()
+        .from(dkpEntries)
+        .where(
+          and(
+            eq(dkpEntries.guildId, guildId),
+            eq(dkpEntries.source, "web"),
+            isNull(dkpEntries.addonSyncedAt),
+          ),
+        )
+        .orderBy(dkpEntries.occurredAt);
+
+      if (pending.length > 0) {
+        await db
+          .update(dkpEntries)
+          .set({ addonSyncedAt: new Date() })
+          .where(
+            and(
+              eq(dkpEntries.guildId, guildId),
+              eq(dkpEntries.source, "web"),
+              isNull(dkpEntries.addonSyncedAt),
+            ),
+          );
+      }
+
+      return pending;
     },
   );
 

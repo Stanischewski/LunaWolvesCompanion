@@ -130,6 +130,7 @@ export const dkpEntries = pgTable(
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
     source: varchar("source", { length: 16 }).notNull().default("addon"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    addonSyncedAt: timestamp("addon_synced_at", { withTimezone: true }),
   },
   (t) => [unique("dkp_entries_guild_addon_id").on(t.guildId, t.addonEntryId)],
 );

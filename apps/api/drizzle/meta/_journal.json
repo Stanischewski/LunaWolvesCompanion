@@ -22,6 +22,13 @@
       "when": 1779055126661,
       "tag": "0002_many_paladin",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779057534976,
+      "tag": "0003_steep_quentin_quire",
+      "breakpoints": true
     }
   ]
 }

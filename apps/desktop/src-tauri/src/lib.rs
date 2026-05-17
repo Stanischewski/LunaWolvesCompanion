@@ -122,7 +122,25 @@ fn upload_in_background(app: AppHandle, config: Config) {
     std::thread::spawn(move || {
         emit_status(&app, "running", "Synchronisiere …");
         match upload(&config) {
-            Ok(body) => emit_status(&app, "ok", format!("Synchronisiert. {body}")),
+            Ok(body) => {
+                let pending_count = serde_json::from_str::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|v| v["pendingWebEntries"].as_array().map(|a| a.len()))
+                    .unwrap_or(0);
+
+                if pending_count > 0 {
+                    emit_status(
+                        &app,
+                        "ok",
+                        format!(
+                            "Synchronisiert. {pending_count} neue DKP-Einträge aus der Web-App."
+                        ),
+                    );
+                    let _ = app.emit("pending-entries", pending_count);
+                } else {
+                    emit_status(&app, "ok", "Synchronisiert.");
+                }
+            }
             Err(err) => emit_status(&app, "error", err),
         }
     });
