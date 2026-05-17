@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/index.js";
-import { guilds, characters, activityLogs } from "../db/schema.js";
+import { guilds, characters, activityLogs, players } from "../db/schema.js";
 import { eq, and, gt, gte, count, sql } from "drizzle-orm";
 
 export async function guildRoutes(app: FastifyInstance) {
@@ -26,10 +26,30 @@ export async function guildRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/guilds/:id/members", async (request, reply) => {
     const guild = await db.query.guilds.findFirst({
       where: eq(guilds.id, request.params.id),
-      with: { characters: { with: { player: true } } },
     });
     if (!guild) return reply.status(404).send({ error: "Gilde nicht gefunden" });
-    return guild.characters;
+
+    const rows = await db
+      .select({
+        id: characters.id,
+        name: characters.name,
+        class: characters.class,
+        level: characters.level,
+        itemLevel: characters.itemLevel,
+        mPlusScore: characters.mPlusScore,
+        guildRank: characters.guildRank,
+        lastLogin: characters.lastLogin,
+        bnetTag: players.bnetTag,
+      })
+      .from(characters)
+      .leftJoin(players, eq(characters.playerId, players.id))
+      .where(eq(characters.guildId, request.params.id));
+
+    return rows.map((r) => ({
+      ...r,
+      player: r.bnetTag ? { bnetTag: r.bnetTag } : null,
+      bnetTag: undefined,
+    }));
   });
 
   app.get<{ Params: { id: string } }>("/guilds/:id/stats", async (request, reply) => {
