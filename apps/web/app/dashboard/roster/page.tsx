@@ -15,7 +15,7 @@ interface Member {
   itemLevel: number;
   mPlusScore: number;
   guildRank: number;
-  player: { bnetTag: string };
+  player: { bnetTag: string } | null;
 }
 
 const classColors: Record<string, string> = {
@@ -90,7 +90,7 @@ export default async function RosterPage() {
                     <td className="px-4 py-3 text-right text-zinc-400">
                       {char.mPlusScore > 0 ? char.mPlusScore : "–"}
                     </td>
-                    <td className="px-4 py-3 text-zinc-500">{char.player.bnetTag}</td>
+                    <td className="px-4 py-3 text-zinc-500">{char.player?.bnetTag ?? "–"}</td>
                   </tr>
                 ))}
             </tbody>

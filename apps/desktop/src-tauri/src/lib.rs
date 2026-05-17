@@ -72,8 +72,9 @@ fn upload(config: &Config) -> Result<String, String> {
         return Err("Es ist keine SavedVariables-Datei konfiguriert.".into());
     }
 
-    let content = std::fs::read_to_string(&config.saved_variables_path)
+    let bytes = std::fs::read(&config.saved_variables_path)
         .map_err(|e| format!("Datei konnte nicht gelesen werden: {e}"))?;
+    let content = String::from_utf8_lossy(&bytes).into_owned();
 
     let url = format!(
         "{}/api/v1/sync/addon-data",
@@ -242,18 +243,20 @@ fn sv_path_in_install(install: &Path) -> Option<String> {
     if !account_dir.is_dir() {
         return None;
     }
+    // Bevorzuge den Account, in dem LunaWolves.lua bereits existiert.
+    // Erst danach Fallback auf den ersten Ordner mit SavedVariables-Dir.
+    let mut fallback: Option<String> = None;
     for entry in std::fs::read_dir(&account_dir).ok()?.flatten() {
-        let saved_variables = entry.path().join("SavedVariables");
-        if saved_variables.is_dir() {
-            return Some(
-                saved_variables
-                    .join("LunaWolvesDB.lua")
-                    .to_string_lossy()
-                    .into_owned(),
-            );
+        let sv_dir = entry.path().join("SavedVariables");
+        let lua_file = sv_dir.join("LunaWolves.lua");
+        if lua_file.is_file() {
+            return Some(lua_file.to_string_lossy().into_owned());
+        }
+        if sv_dir.is_dir() && fallback.is_none() {
+            fallback = Some(lua_file.to_string_lossy().into_owned());
         }
     }
-    None
+    fallback
 }
 
 /// Durchsucht die ueblichen Installationsorte aller Laufwerke (C–Z) nach einer
@@ -261,6 +264,7 @@ fn sv_path_in_install(install: &Path) -> Option<String> {
 /// sind guenstig, daher ist das simple Abklappern der Kandidaten ausreichend.
 fn detect_sv_path() -> Option<String> {
     let suffixes = [
+        r"Battle.net\World of Warcraft",
         "World of Warcraft",
         r"Games\World of Warcraft",
         r"Program Files (x86)\World of Warcraft",

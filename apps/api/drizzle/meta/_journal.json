@@ -8,6 +8,13 @@
       "when": 1778863797701,
       "tag": "0000_lyrical_clint_barton",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779053757356,
+      "tag": "0001_tan_black_bolt",
+      "breakpoints": true
     }
   ]
 }

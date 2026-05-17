@@ -201,8 +201,14 @@ export async function syncRoutes(app: FastifyInstance) {
           .returning({ id: addonSnapshots.id });
 
         let updated = 0;
-        let unmatched = 0;
+        let created = 0;
         for (const member of roster.members) {
+          const mappedClass = CLASS_MAP[member.class.toUpperCase()];
+          if (!mappedClass) continue; // unbekannte Klasse — überspringen
+
+          const seenAt = member.online ? roster.scannedAt : member.lastSeen;
+          const lastLogin = new Date(seenAt * 1000);
+
           const existing = await tx.query.characters.findFirst({
             where: and(
               eq(characters.guildId, guild.id),
@@ -210,13 +216,31 @@ export async function syncRoutes(app: FastifyInstance) {
               eq(characters.realm, member.realm),
             ),
           });
+
           if (!existing) {
-            unmatched++;
+            const [inserted] = await tx
+              .insert(characters)
+              .values({
+                guildId: guild.id,
+                name: member.name,
+                realm: member.realm,
+                class: mappedClass,
+                level: member.level,
+                itemLevel: member.itemLevel,
+                guildRank: member.guildRank,
+                lastLogin,
+              })
+              .returning();
+            await tx.insert(activityLogs).values({
+              characterId: inserted.id,
+              eventType: "seen",
+              eventData: { online: member.online, level: member.level, itemLevel: member.itemLevel },
+              source: "addon",
+            });
+            created++;
             continue;
           }
-          const seenAt = member.online ? roster.scannedAt : member.lastSeen;
-          const lastLogin = new Date(seenAt * 1000);
-          const mappedClass = CLASS_MAP[member.class.toUpperCase()];
+
           await tx
             .update(characters)
             .set({
@@ -224,7 +248,7 @@ export async function syncRoutes(app: FastifyInstance) {
               itemLevel: member.itemLevel,
               guildRank: member.guildRank,
               lastLogin,
-              ...(mappedClass ? { class: mappedClass } : {}),
+              class: mappedClass,
             })
             .where(eq(characters.id, existing.id));
           updated++;
@@ -240,7 +264,7 @@ export async function syncRoutes(app: FastifyInstance) {
           }
         }
 
-        return { snapshotId: snapshot.id, guild, updated, unmatched };
+        return { snapshotId: snapshot.id, guild, updated, created };
       });
 
       app.io.to(`guild:${result.guild.id}`).emit("member_seen", {
@@ -254,8 +278,8 @@ export async function syncRoutes(app: FastifyInstance) {
         guild: { id: result.guild.id, name: result.guild.name, realm: result.guild.realm },
         membersInRoster: roster.members.length,
         membersSkipped: roster.skipped,
+        charactersCreated: result.created,
         charactersUpdated: result.updated,
-        charactersUnmatched: result.unmatched,
       });
     },
   );

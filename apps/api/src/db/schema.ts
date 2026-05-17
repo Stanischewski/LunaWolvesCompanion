@@ -41,8 +41,7 @@ export const guilds = pgTable("guilds", {
 export const characters = pgTable("characters", {
   id: uuid("id").primaryKey().defaultRandom(),
   playerId: uuid("player_id")
-    .notNull()
-    .references(() => players.id, { onDelete: "cascade" }),
+    .references(() => players.id, { onDelete: "set null" }),
   guildId: uuid("guild_id")
     .notNull()
     .references(() => guilds.id, { onDelete: "cascade" }),
