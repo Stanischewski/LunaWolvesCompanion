@@ -243,6 +243,12 @@ export async function syncRoutes(app: FastifyInstance) {
         return { snapshotId: snapshot.id, guild, updated, unmatched };
       });
 
+      app.io.to(`guild:${result.guild.id}`).emit("member_seen", {
+        guildId: result.guild.id,
+        updated: result.updated,
+        scannedAt: roster.scannedAt,
+      });
+
       return reply.status(201).send({
         snapshotId: result.snapshotId,
         guild: { id: result.guild.id, name: result.guild.name, realm: result.guild.realm },

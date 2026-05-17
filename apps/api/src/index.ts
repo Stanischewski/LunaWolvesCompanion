@@ -3,14 +3,27 @@ import Fastify from "fastify";
 import fastifyOAuth2 from "@fastify/oauth2";
 import fastifyJwt from "@fastify/jwt";
 import fastifyCookie from "@fastify/cookie";
+import { Server as SocketServer } from "socket.io";
 import { authRoutes } from "./routes/auth.js";
 import { playerRoutes } from "./routes/players.js";
 import { guildRoutes } from "./routes/guilds.js";
 import { characterRoutes } from "./routes/characters.js";
 import { raidRoutes } from "./routes/raids.js";
 import { syncRoutes } from "./routes/sync.js";
+import { setupSocketHandlers } from "./ws/socket.js";
+import { enrichMPlusScores } from "./jobs/raiderio.js";
 
 const app = Fastify({ logger: true });
+
+const io = new SocketServer(app.server, {
+  cors: {
+    origin: process.env.WEB_URL ?? "http://localhost:3000",
+    methods: ["GET", "POST"],
+  },
+  path: "/ws",
+});
+app.decorate("io", io);
+setupSocketHandlers(io, app.log);
 
 await app.register(fastifyCookie);
 
@@ -69,4 +82,11 @@ app.listen({ port: 3001, host: "0.0.0.0" }, (err, address) => {
     process.exit(1);
   }
   app.log.info(`API Server läuft auf ${address}`);
+
+  // Raider.IO M+ Score Enrichment (sofort + alle 30 Minuten)
+  enrichMPlusScores().catch((e) => app.log.error("[Raider.IO] Startup-Fehler:", e));
+  setInterval(
+    () => enrichMPlusScores().catch((e) => app.log.error("[Raider.IO] Fehler:", e)),
+    30 * 60 * 1000,
+  );
 });

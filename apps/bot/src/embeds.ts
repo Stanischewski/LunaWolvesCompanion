@@ -163,6 +163,53 @@ export function inactivityReportEmbed(members: MemberCharacter[]): EmbedBuilder 
     .setTimestamp();
 }
 
+export function compareEmbed(a: MemberCharacter, b: MemberCharacter): EmbedBuilder {
+  const emojiA = CLASS_EMOJI[a.class] ?? "❓";
+  const emojiB = CLASS_EMOJI[b.class] ?? "❓";
+  const clsA = CLASS_NAMES[a.class] ?? a.class;
+  const clsB = CLASS_NAMES[b.class] ?? b.class;
+
+  // ✅ = besser, ❌ = schlechter, — = gleich (higherBetter=true für ilvl/M+, false für Rang)
+  const cmp = (v1: number, v2: number, higherBetter = true): string => {
+    if (v1 === v2) return "—";
+    return (higherBetter ? v1 > v2 : v1 < v2) ? "✅" : "❌";
+  };
+
+  const scoreA = a.mPlusScore ?? 0;
+  const scoreB = b.mPlusScore ?? 0;
+
+  return new EmbedBuilder()
+    .setColor(GUILD_COLOR)
+    .setTitle("⚖️ Spieler-Vergleich")
+    .setDescription(`${emojiA} **${a.name}** vs ${emojiB} **${b.name}**`)
+    .addFields(
+      {
+        name: `${emojiA} ${a.name}`,
+        value: [
+          `**Klasse:** ${clsA}`,
+          `**ilvl:** ${cmp(a.itemLevel, b.itemLevel)} ${a.itemLevel}`,
+          `**M+:** ${cmp(scoreA, scoreB)} ${scoreA}`,
+          `**Rang:** ${cmp(a.guildRank, b.guildRank, false)} ${a.guildRank}`,
+          `**Aktiv:** ${a.lastLogin ? tsRel(a.lastLogin) : "—"}`,
+        ].join("\n"),
+        inline: true,
+      },
+      {
+        name: `${emojiB} ${b.name}`,
+        value: [
+          `**Klasse:** ${clsB}`,
+          `**ilvl:** ${cmp(b.itemLevel, a.itemLevel)} ${b.itemLevel}`,
+          `**M+:** ${cmp(scoreB, scoreA)} ${scoreB}`,
+          `**Rang:** ${cmp(b.guildRank, a.guildRank, false)} ${b.guildRank}`,
+          `**Aktiv:** ${b.lastLogin ? tsRel(b.lastLogin) : "—"}`,
+        ].join("\n"),
+        inline: true,
+      },
+    )
+    .setFooter({ text: "✅ führt · ❌ liegt zurück · — gleich" })
+    .setTimestamp();
+}
+
 export function raidRosterEmbed(raid: RaidEvent): EmbedBuilder {
   const signups = raid.signups ?? [];
   const tanks = signups

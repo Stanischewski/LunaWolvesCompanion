@@ -14,7 +14,7 @@ export async function raidRoutes(app: FastifyInstance) {
         where: eq(raidEvents.guildId, request.params.guildId),
         orderBy: asc(raidEvents.scheduledAt),
       });
-    }
+    },
   );
 
   app.post<{
@@ -57,6 +57,21 @@ export async function raidRoutes(app: FastifyInstance) {
         set: { role, status },
       })
       .returning();
+
+    // WebSocket: Raid-Signup-Event an alle Clients dieser Gilde senden
+    const raid = await db.query.raidEvents.findFirst({
+      where: eq(raidEvents.id, request.params.id),
+      columns: { guildId: true },
+    });
+    if (raid) {
+      app.io.to(`guild:${raid.guildId}`).emit("raid_signup", {
+        raidId: request.params.id,
+        characterId,
+        role,
+        status: signup.status,
+      });
+    }
+
     return reply.status(201).send(signup);
   });
 
@@ -71,8 +86,8 @@ export async function raidRoutes(app: FastifyInstance) {
       .where(
         and(
           eq(raidSignups.raidEventId, request.params.id),
-          eq(raidSignups.characterId, characterId)
-        )
+          eq(raidSignups.characterId, characterId),
+        ),
       )
       .returning();
     if (!updated) return reply.status(404).send({ error: "Signup nicht gefunden" });

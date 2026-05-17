@@ -4,6 +4,8 @@ const navItems = [
   { href: "/dashboard", label: "Übersicht" },
   { href: "/dashboard/roster", label: "Roster" },
   { href: "/dashboard/raids", label: "Raids" },
+  { href: "/dashboard/stats", label: "Statistiken" },
+  { href: "/dashboard/compare", label: "Vergleich" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

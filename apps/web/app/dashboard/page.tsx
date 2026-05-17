@@ -1,4 +1,10 @@
 import { apiFetch } from "@/lib/api";
+import { LiveFeed } from "./components/LiveFeed";
+
+interface Guild {
+  id: string;
+  name: string;
+}
 
 interface Character {
   id: string;
@@ -7,7 +13,7 @@ interface Character {
   level: number;
   itemLevel: number;
   mPlusScore: number;
-  guild: { name: string } | null;
+  guild: Guild | null;
 }
 
 interface Player {
@@ -37,6 +43,8 @@ export default async function DashboardPage() {
   try {
     player = await apiFetch<Player>("/players/me");
   } catch {}
+
+  const guildId = player?.characters.find((c) => c.guild)?.guild?.id ?? null;
 
   return (
     <div>
@@ -80,6 +88,8 @@ export default async function DashboardPage() {
               </div>
             )}
           </div>
+
+          {guildId && <LiveFeed guildId={guildId} />}
         </div>
       ) : (
         <p className="text-zinc-500">Fehler beim Laden des Profils.</p>
