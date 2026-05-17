@@ -274,6 +274,13 @@ export async function syncRoutes(app: FastifyInstance) {
             eq(guilds.realm, roster.guild.realm),
           ),
         });
+        // Fallback: Name-only suchen — Connected Realms können denselben Gilden-Namen
+        // mit unterschiedlichen Realm-Strings melden (z.B. "Eredar" vs. "Aman'thul").
+        if (!guild) {
+          guild = await tx.query.guilds.findFirst({
+            where: eq(guilds.name, roster.guild.name),
+          });
+        }
         if (guild) {
           await tx
             .update(guilds)
