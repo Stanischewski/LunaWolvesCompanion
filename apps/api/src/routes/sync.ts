@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql, gt } from "drizzle-orm";
 import { parseLua, LuaParseError } from "@guild/lua-parser";
 import type { LuaValue } from "@guild/lua-parser";
 import type { WowClass } from "@guild/shared-types";
 import { db } from "../db/index.js";
-import { guilds, characters, addonSnapshots, activityLogs } from "../db/schema.js";
+import { guilds, characters, addonSnapshots, activityLogs, dkpEntries, dkpStandings, dkpTombstones } from "../db/schema.js";
 
 /**
  * Sync Service — Addon-Datenupload (Phase 2).
@@ -24,6 +24,14 @@ import { guilds, characters, addonSnapshots, activityLogs } from "../db/schema.j
  *   }
  */
 
+const DKP_TYPE_MAP: Record<string, "manual" | "boss" | "spend" | "correction"> = {
+  MANUAL: "manual",
+  BOSS: "boss",
+  SPEND: "spend",
+  CORRECTION: "correction",
+  ADJUST: "correction",
+};
+
 const CLASS_MAP: Record<string, WowClass> = {
   WARRIOR: "warrior",
   PALADIN: "paladin",
@@ -39,6 +47,22 @@ const CLASS_MAP: Record<string, WowClass> = {
   DEATHKNIGHT: "death_knight",
   EVOKER: "evoker",
 };
+
+interface AddonDkpEntry {
+  id: string;
+  player: string;
+  delta: number;
+  reason: string;
+  type: string;
+  officer: string;
+  timestamp: number;
+}
+
+interface AddonTombstone {
+  player: string;
+  timestamp: number;
+  officer: string;
+}
 
 interface AddonMember {
   name: string;
@@ -134,6 +158,50 @@ function parseRoster(value: LuaValue): RosterResult {
       skipped,
     },
   };
+}
+
+function toLuaArray(value: LuaValue): LuaValue[] {
+  if (Array.isArray(value)) return value;
+  if (isLuaObject(value)) return Object.values(value);
+  return [];
+}
+
+function parseDkp(
+  rootValue: LuaValue,
+): { entries: AddonDkpEntry[]; tombstones: AddonTombstone[] } | null {
+  if (!isLuaObject(rootValue)) return null;
+  const dkpRaw = rootValue.DKP;
+  if (!isLuaObject(dkpRaw)) return null;
+
+  const entries: AddonDkpEntry[] = [];
+  for (const raw of toLuaArray(dkpRaw.history)) {
+    if (!isLuaObject(raw)) continue;
+    const { id, player, delta, reason, type, officer, timestamp } = raw;
+    if (typeof id !== "string" || typeof player !== "string" || !id || !player) continue;
+    entries.push({
+      id,
+      player,
+      delta: typeof delta === "number" ? delta : 0,
+      reason: typeof reason === "string" ? reason : "",
+      type: typeof type === "string" ? type.toUpperCase() : "MANUAL",
+      officer: typeof officer === "string" ? officer : "",
+      timestamp: typeof timestamp === "number" ? timestamp : 0,
+    });
+  }
+
+  const tombstones: AddonTombstone[] = [];
+  for (const raw of toLuaArray(dkpRaw.deleted)) {
+    if (!isLuaObject(raw)) continue;
+    const { player, timestamp, officer } = raw;
+    if (typeof player !== "string" || !player) continue;
+    tombstones.push({
+      player,
+      timestamp: typeof timestamp === "number" ? timestamp : 0,
+      officer: typeof officer === "string" ? officer : "",
+    });
+  }
+
+  return { entries, tombstones };
 }
 
 export async function syncRoutes(app: FastifyInstance) {
@@ -264,7 +332,113 @@ export async function syncRoutes(app: FastifyInstance) {
           }
         }
 
-        return { snapshotId: snapshot.id, guild, updated, created };
+        // DKP-Merge
+        const dkp = parseDkp(rawData);
+        let dkpEntriesInserted = 0;
+        let dkpTombstonesInserted = 0;
+        const dkpAffectedPlayers = new Set<string>();
+
+        if (dkp) {
+          // Tombstones zuerst einfügen
+          for (const tomb of dkp.tombstones) {
+            const deletedAt = new Date(tomb.timestamp * 1000);
+            const expiresAt = new Date(deletedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
+            const [inserted] = await tx
+              .insert(dkpTombstones)
+              .values({
+                guildId: guild.id,
+                playerName: tomb.player,
+                deletedBy: tomb.officer,
+                deletedAt,
+                expiresAt,
+              })
+              .onConflictDoNothing()
+              .returning({ id: dkpTombstones.id });
+            if (inserted) {
+              dkpTombstonesInserted++;
+              dkpAffectedPlayers.add(tomb.player);
+            }
+          }
+
+          // Alle aktiven Tombstones für diese Gilde laden (für Entry-Filter)
+          const activeTombstones = await tx.query.dkpTombstones.findMany({
+            where: eq(dkpTombstones.guildId, guild.id),
+          });
+          const tombstoneMap = new Map<string, Date>(
+            activeTombstones.map((t) => [t.playerName, t.deletedAt]),
+          );
+
+          // History-Einträge einfügen
+          for (const entry of dkp.entries) {
+            const mappedType = DKP_TYPE_MAP[entry.type];
+            if (!mappedType) continue;
+
+            const occurredAt = new Date(entry.timestamp * 1000);
+
+            // Tombstone-Check: Eintrag überspringen wenn Spieler nach/zum Zeitpunkt gelöscht
+            const tombstoneDate = tombstoneMap.get(entry.player);
+            if (tombstoneDate && tombstoneDate >= occurredAt) continue;
+
+            const [inserted] = await tx
+              .insert(dkpEntries)
+              .values({
+                guildId: guild.id,
+                addonEntryId: entry.id,
+                playerName: entry.player,
+                delta: entry.delta,
+                reason: entry.reason,
+                entryType: mappedType,
+                officerName: entry.officer,
+                occurredAt,
+                source: "addon",
+              })
+              .onConflictDoNothing()
+              .returning({ id: dkpEntries.id });
+
+            if (inserted) {
+              dkpEntriesInserted++;
+              dkpAffectedPlayers.add(entry.player);
+            }
+          }
+
+          // Standings für alle betroffenen Spieler neu berechnen
+          for (const playerName of dkpAffectedPlayers) {
+            const tombstone = tombstoneMap.get(playerName);
+            const baseWhere = and(
+              eq(dkpEntries.guildId, guild.id),
+              eq(dkpEntries.playerName, playerName),
+            );
+            const whereClause = tombstone
+              ? and(baseWhere, gt(dkpEntries.occurredAt, tombstone))
+              : baseWhere;
+
+            const [sums] = await tx
+              .select({
+                current: sql<number>`COALESCE(SUM(${dkpEntries.delta}), 0)::int`,
+                lifetime: sql<number>`COALESCE(SUM(CASE WHEN ${dkpEntries.delta} > 0 THEN ${dkpEntries.delta} ELSE 0 END), 0)::int`,
+              })
+              .from(dkpEntries)
+              .where(whereClause);
+
+            await tx
+              .insert(dkpStandings)
+              .values({ guildId: guild.id, playerName, current: sums.current, lifetime: sums.lifetime })
+              .onConflictDoUpdate({
+                target: [dkpStandings.guildId, dkpStandings.playerName],
+                set: { current: sums.current, lifetime: sums.lifetime, updatedAt: new Date() },
+              });
+          }
+        }
+
+        return {
+          snapshotId: snapshot.id,
+          guild,
+          updated,
+          created,
+          dkpEntriesInserted,
+          dkpTombstonesInserted,
+          dkpPlayersRecalculated: dkpAffectedPlayers.size,
+        };
       });
 
       app.io.to(`guild:${result.guild.id}`).emit("member_seen", {
@@ -273,6 +447,14 @@ export async function syncRoutes(app: FastifyInstance) {
         scannedAt: roster.scannedAt,
       });
 
+      if (result.dkpEntriesInserted > 0 || result.dkpTombstonesInserted > 0) {
+        app.io.to(`guild:${result.guild.id}`).emit("dkp_update", {
+          guildId: result.guild.id,
+          entriesInserted: result.dkpEntriesInserted,
+          tombstonesInserted: result.dkpTombstonesInserted,
+        });
+      }
+
       return reply.status(201).send({
         snapshotId: result.snapshotId,
         guild: { id: result.guild.id, name: result.guild.name, realm: result.guild.realm },
@@ -280,6 +462,9 @@ export async function syncRoutes(app: FastifyInstance) {
         membersSkipped: roster.skipped,
         charactersCreated: result.created,
         charactersUpdated: result.updated,
+        dkpEntriesInserted: result.dkpEntriesInserted,
+        dkpTombstonesInserted: result.dkpTombstonesInserted,
+        dkpPlayersRecalculated: result.dkpPlayersRecalculated,
       });
     },
   );
