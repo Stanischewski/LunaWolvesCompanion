@@ -1,10 +1,5 @@
 import { apiFetch } from "@/lib/api";
-
-interface Guild {
-  id: string;
-  name: string;
-  realm: string;
-}
+import { resolveGuild } from "@/lib/guild";
 
 interface StatsResponse {
   totalMembers: number;
@@ -50,24 +45,12 @@ function BarChart({
 }
 
 export default async function StatsPage() {
-  let guild: Guild | null = null;
+  const guild = await resolveGuild().catch(() => null);
   let stats: StatsResponse | null = null;
 
-  try {
-    const player = await apiFetch<{ characters: { guild: Guild | null }[] }>("/players/me").catch(() => null);
-    const guildFromPlayer = player?.characters.find((c) => c.guild)?.guild ?? null;
-
-    if (guildFromPlayer) {
-      guild = guildFromPlayer;
-    } else {
-      const guilds = await apiFetch<Guild[]>("/guilds");
-      if (guilds.length > 0) guild = guilds[0];
-    }
-
-    if (guild) {
-      stats = await apiFetch<StatsResponse>(`/guilds/${guild.id}/stats`);
-    }
-  } catch {}
+  if (guild) {
+    stats = await apiFetch<StatsResponse>(`/guilds/${guild.id}/stats`).catch(() => null);
+  }
 
   if (!guild) {
     return (

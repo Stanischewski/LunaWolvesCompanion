@@ -15,4 +15,6 @@ export const config = {
   // Optionale Channel-IDs für automatische Benachrichtigungen
   raidChannelId: process.env.RAID_CHANNEL_ID,
   officerChannelId: process.env.OFFICER_CHANNEL_ID,
+  // Discord-Rollen-IDs der Officers, kommagetrennt (für DKP award/spend)
+  officerRoleIds: process.env.OFFICER_ROLE_IDS?.split(",").map((s) => s.trim()).filter(Boolean) ?? [],
 };

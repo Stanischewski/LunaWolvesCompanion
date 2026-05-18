@@ -1,5 +1,5 @@
 import { EmbedBuilder } from "discord.js";
-import type { GuildInfo, MemberCharacter, RaidEvent } from "./api.js";
+import type { GuildInfo, MemberCharacter, RaidEvent, DkpStanding, DkpEntry } from "./api.js";
 
 export const GUILD_COLOR = 0x7c3aed;
 
@@ -160,6 +160,47 @@ export function inactivityReportEmbed(members: MemberCharacter[]): EmbedBuilder 
     .setDescription(
       `Folgende Mitglieder waren **mehr als 14 Tage** nicht online:\n\n${lines.join("\n")}`,
     )
+    .setTimestamp();
+}
+
+export function dkpStandingsEmbed(standings: DkpStanding[]): EmbedBuilder {
+  const top = standings.slice(0, 15);
+  const lines = top.map(
+    (s, i) =>
+      `\`${String(i + 1).padStart(2, " ")}\` **${s.playerName}** — ${s.current} DKP *(${s.lifetime} gesamt)*`,
+  );
+  return new EmbedBuilder()
+    .setColor(GUILD_COLOR)
+    .setTitle("🏆 DKP Standings")
+    .setDescription(lines.join("\n") || "Keine Einträge.")
+    .setFooter({
+      text: `${standings.length} Spieler${standings.length > 15 ? " · Zeige Top 15" : ""}`,
+    })
+    .setTimestamp();
+}
+
+export function dkpPlayerEmbed(standing: DkpStanding): EmbedBuilder {
+  return new EmbedBuilder()
+    .setColor(GUILD_COLOR)
+    .setTitle(`💰 DKP — ${standing.playerName}`)
+    .addFields(
+      { name: "Aktuell", value: String(standing.current), inline: true },
+      { name: "Gesamt verdient", value: String(standing.lifetime), inline: true },
+    )
+    .setTimestamp();
+}
+
+export function dkpHistoryEmbed(entries: DkpEntry[], playerFilter?: string): EmbedBuilder {
+  const lines = entries.map((e) => {
+    const sign = e.delta > 0 ? "+" : "";
+    const icon = e.entryType === "spend" ? "💸" : e.delta > 0 ? "✅" : "🔧";
+    return `${icon} **${e.playerName}** ${sign}${e.delta} — ${e.reason}`;
+  });
+  const title = playerFilter ? `📜 DKP-Verlauf — ${playerFilter}` : "📜 DKP-Verlauf";
+  return new EmbedBuilder()
+    .setColor(GUILD_COLOR)
+    .setTitle(title)
+    .setDescription(lines.join("\n") || "Keine Einträge.")
     .setTimestamp();
 }
 

@@ -3,6 +3,8 @@ import { db } from "../db/index.js";
 import { guilds, characters, activityLogs, players } from "../db/schema.js";
 import { eq, and, gt, gte, count, sql } from "drizzle-orm";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function guildRoutes(app: FastifyInstance) {
   app.get("/guilds", async () => {
     return db.query.guilds.findMany();
@@ -16,6 +18,7 @@ export async function guildRoutes(app: FastifyInstance) {
   });
 
   app.get<{ Params: { id: string } }>("/guilds/:id", async (request, reply) => {
+    if (!UUID_RE.test(request.params.id)) return reply.status(400).send({ error: "Ungültige ID" });
     const guild = await db.query.guilds.findFirst({
       where: eq(guilds.id, request.params.id),
     });
@@ -24,6 +27,7 @@ export async function guildRoutes(app: FastifyInstance) {
   });
 
   app.get<{ Params: { id: string } }>("/guilds/:id/members", async (request, reply) => {
+    if (!UUID_RE.test(request.params.id)) return reply.status(400).send({ error: "Ungültige ID" });
     const guild = await db.query.guilds.findFirst({
       where: eq(guilds.id, request.params.id),
     });
@@ -54,6 +58,7 @@ export async function guildRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>("/guilds/:id/stats", async (request, reply) => {
     const guildId = request.params.id;
+    if (!UUID_RE.test(guildId)) return reply.status(400).send({ error: "Ungültige ID" });
     const guild = await db.query.guilds.findFirst({ where: eq(guilds.id, guildId) });
     if (!guild) return reply.status(404).send({ error: "Gilde nicht gefunden" });
 

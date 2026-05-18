@@ -38,6 +38,26 @@ export interface RaidSignup {
   character?: MemberCharacter;
 }
 
+export interface DkpStanding {
+  guildId: string;
+  playerName: string;
+  current: number;
+  lifetime: number;
+  updatedAt: string;
+}
+
+export interface DkpEntry {
+  id: string;
+  guildId: string;
+  playerName: string;
+  delta: number;
+  reason: string;
+  entryType: string;
+  officerName: string;
+  occurredAt: string;
+  source: string;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${config.apiUrl}/api/v1${path}`, {
     ...options,
@@ -71,6 +91,26 @@ export const api = {
       apiFetch<RaidSignup>(`/raids/${id}/signup`, {
         method: "POST",
         body: JSON.stringify(body),
+      }),
+  },
+  dkp: {
+    standings: () =>
+      apiFetch<DkpStanding[]>(`/guilds/${config.lunaGuildId}/dkp/standings`),
+    player: (name: string) =>
+      apiFetch<DkpStanding>(`/guilds/${config.lunaGuildId}/dkp/standings/${encodeURIComponent(name)}`),
+    history: (player?: string) =>
+      apiFetch<DkpEntry[]>(
+        `/guilds/${config.lunaGuildId}/dkp/history?limit=10${player ? `&player=${encodeURIComponent(player)}` : ""}`,
+      ),
+    award: (playerName: string, amount: number, reason: string) =>
+      apiFetch<DkpEntry>(`/guilds/${config.lunaGuildId}/dkp/award`, {
+        method: "POST",
+        body: JSON.stringify({ playerName, amount, reason }),
+      }),
+    spend: (playerName: string, amount: number, reason: string) =>
+      apiFetch<DkpEntry>(`/guilds/${config.lunaGuildId}/dkp/spend`, {
+        method: "POST",
+        body: JSON.stringify({ playerName, amount, reason }),
       }),
   },
 };

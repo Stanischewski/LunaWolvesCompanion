@@ -3,6 +3,7 @@ import type { ChatInputCommandInteraction, AutocompleteInteraction } from "disco
 import { guildCommand } from "./guild.js";
 import { playerCommand } from "./player.js";
 import { raidCommand } from "./raid.js";
+import { dkpCommand } from "./dkp.js";
 
 export interface Command {
   data: { name: string; toJSON(): object };
@@ -14,4 +15,5 @@ export const commands = new Collection<string, Command>([
   [guildCommand.data.name, guildCommand],
   [playerCommand.data.name, playerCommand],
   [raidCommand.data.name, raidCommand],
+  [dkpCommand.data.name, dkpCommand],
 ]);
