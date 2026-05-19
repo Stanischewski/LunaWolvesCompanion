@@ -31,6 +31,8 @@ export const players = pgTable("players", {
   discordId: varchar("discord_id", { length: 32 }),
   discordTag: varchar("discord_tag", { length: 64 }),
   displayName: varchar("display_name", { length: 64 }),
+  bnetAccessToken: text("bnet_access_token"),
+  bnetTokenExpiry: timestamp("bnet_token_expiry", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -108,6 +110,30 @@ export const raidSignups = pgTable(
   },
   (t) => [primaryKey({ columns: [t.raidEventId, t.characterId] })],
 );
+
+export const characterEquipment = pgTable(
+  "character_equipment",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    characterId: uuid("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    slot: varchar("slot", { length: 32 }).notNull(),
+    itemId: integer("item_id").notNull(),
+    itemName: varchar("item_name", { length: 256 }),
+    itemLevel: integer("item_level").notNull().default(0),
+    quality: varchar("quality", { length: 32 }),
+    iconUrl: text("icon_url"),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("char_equipment_slot").on(t.characterId, t.slot)],
+);
+
+export const itemIconCache = pgTable("item_icon_cache", {
+  itemId: integer("item_id").primaryKey(),
+  iconUrl: text("icon_url").notNull(),
+  cachedAt: timestamp("cached_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // === DKP-System ===
 

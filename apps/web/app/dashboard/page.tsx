@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { LiveFeed } from "./components/LiveFeed";
 import { DisplayNameTile } from "./DisplayNameTile";
@@ -87,9 +88,10 @@ export default async function DashboardPage() {
             ) : (
               <div className="grid gap-2">
                 {player.characters.map((char) => (
-                  <div
+                  <Link
                     key={char.id}
-                    className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 flex items-center justify-between"
+                    href={`/dashboard/characters/${char.id}`}
+                    className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 flex items-center justify-between hover:border-zinc-600 hover:bg-zinc-800/60 transition-colors"
                   >
                     <div>
                       <span className={`font-semibold ${classColors[char.class] ?? "text-zinc-100"}`}>
@@ -101,11 +103,11 @@ export default async function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-6 text-sm text-zinc-400">
                       <span>Lvl {char.level}</span>
-                      <span className="text-zinc-300">{char.itemLevel} ilvl</span>
+                      <span className="text-zinc-300">{char.itemLevel > 0 ? char.itemLevel : "–"} ilvl</span>
                       {char.mPlusScore > 0 && <span>{char.mPlusScore} M+</span>}
                       {char.guild && <span className="text-zinc-500">{char.guild.name}</span>}
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}

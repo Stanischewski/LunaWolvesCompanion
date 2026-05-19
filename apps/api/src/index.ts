@@ -13,6 +13,7 @@ import { syncRoutes } from "./routes/sync.js";
 import { dkpRoutes } from "./routes/dkp.js";
 import { setupSocketHandlers } from "./ws/socket.js";
 import { enrichMPlusScores } from "./jobs/raiderio.js";
+import { syncEquipment } from "./jobs/equipment.js";
 
 const app = Fastify({ logger: true });
 
@@ -89,6 +90,12 @@ app.listen({ port: 3001, host: "0.0.0.0" }, (err, address) => {
   enrichMPlusScores().catch((e) => app.log.error("[Raider.IO] Startup-Fehler:", e));
   setInterval(
     () => enrichMPlusScores().catch((e) => app.log.error("[Raider.IO] Fehler:", e)),
+    30 * 60 * 1000,
+  );
+
+  syncEquipment(app.log).catch((e) => app.log.error("[Equipment] Startup-Fehler:", e));
+  setInterval(
+    () => syncEquipment(app.log).catch((e) => app.log.error("[Equipment] Fehler:", e)),
     30 * 60 * 1000,
   );
 });

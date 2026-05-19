@@ -30,6 +30,10 @@ export async function authRoutes(app: FastifyInstance) {
 
     const userinfo = (await res.json()) as BnetUserInfo;
 
+    const bnetAccessToken = token.token.access_token as string;
+    const expiresIn = (token.token.expires_in as number | undefined) ?? 86400;
+    const bnetTokenExpiry = new Date(Date.now() + expiresIn * 1000);
+
     let player = await db.query.players.findFirst({
       where: eq(players.bnetId, userinfo.sub),
     });
@@ -37,9 +41,16 @@ export async function authRoutes(app: FastifyInstance) {
     if (!player) {
       const [created] = await db
         .insert(players)
-        .values({ bnetId: userinfo.sub, bnetTag: userinfo.battletag })
+        .values({ bnetId: userinfo.sub, bnetTag: userinfo.battletag, bnetAccessToken, bnetTokenExpiry })
         .returning();
       player = created;
+    } else {
+      const [updated] = await db
+        .update(players)
+        .set({ bnetTag: userinfo.battletag, bnetAccessToken, bnetTokenExpiry })
+        .where(eq(players.bnetId, userinfo.sub))
+        .returning();
+      player = updated;
     }
 
     const jwt = app.jwt.sign(

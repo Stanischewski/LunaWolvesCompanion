@@ -7,6 +7,7 @@ import {
   addonSnapshots,
   raidEvents,
   raidSignups,
+  characterEquipment,
   dkpEntries,
   dkpStandings,
   dkpTombstones,
@@ -33,6 +34,11 @@ export const charactersRelations = relations(characters, ({ one, many }) => ({
   guild: one(guilds, { fields: [characters.guildId], references: [guilds.id] }),
   activityLogs: many(activityLogs),
   raidSignups: many(raidSignups),
+  equipment: many(characterEquipment),
+}));
+
+export const characterEquipmentRelations = relations(characterEquipment, ({ one }) => ({
+  character: one(characters, { fields: [characterEquipment.characterId], references: [characters.id] }),
 }));
 
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({

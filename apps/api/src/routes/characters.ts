@@ -8,6 +8,18 @@ type WowClass =
   | "mage" | "warlock" | "monk" | "druid" | "demon_hunter" | "death_knight" | "evoker";
 
 export async function characterRoutes(app: FastifyInstance) {
+  app.get<{ Params: { id: string } }>("/characters/:id", async (request, reply) => {
+    const char = await db.query.characters.findFirst({
+      where: eq(characters.id, request.params.id),
+      with: {
+        guild: true,
+        equipment: true,
+      },
+    });
+    if (!char) return reply.status(404).send({ error: "Charakter nicht gefunden" });
+    return char;
+  });
+
   app.get("/characters", { onRequest: [app.authenticate] }, async (request) => {
     return db.query.characters.findMany({
       where: eq(characters.playerId, request.user.sub),
