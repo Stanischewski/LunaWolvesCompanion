@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
 
 const navItems = [
   { href: "/dashboard", label: "Übersicht" },
@@ -10,14 +9,7 @@ const navItems = [
   { href: "/dashboard/compare", label: "Vergleich" },
 ];
 
-interface Player {
-  bnetTag: string;
-  discordTag: string | null;
-}
-
-export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const player = await apiFetch<Player>("/players/me").catch(() => null);
-
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <aside className="w-56 bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0">
@@ -36,28 +28,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             </Link>
           ))}
         </nav>
-        <div className="p-3 border-t border-zinc-800 space-y-2">
-          {player && (
-            <div className="px-3 py-2 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-600 text-xs">Bnet</span>
-                <span className="text-zinc-300 text-xs truncate">{player.bnetTag}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-600 text-xs">DC</span>
-                {player.discordTag ? (
-                  <span className="text-indigo-300 text-xs truncate">{player.discordTag}</span>
-                ) : (
-                  <a
-                    href="/auth/discord-link"
-                    className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                  >
-                    verknüpfen
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
+        <div className="p-3 border-t border-zinc-800">
           <a
             href="/auth/logout"
             className="text-zinc-500 hover:text-zinc-300 text-sm px-3 py-2 block transition-colors rounded-md"

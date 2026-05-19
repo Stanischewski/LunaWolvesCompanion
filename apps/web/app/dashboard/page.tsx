@@ -19,6 +19,7 @@ interface Character {
 interface Player {
   id: string;
   bnetTag: string;
+  discordTag: string | null;
   characters: Character[];
 }
 
@@ -51,9 +52,26 @@ export default async function DashboardPage() {
       <h1 className="text-2xl font-bold mb-6">Übersicht</h1>
       {player ? (
         <div className="space-y-6">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 inline-block">
-            <p className="text-zinc-500 text-xs uppercase tracking-wider">Battle.net Account</p>
-            <p className="text-xl font-semibold mt-1">{player.bnetTag}</p>
+          <div className="flex gap-4 flex-wrap">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+              <p className="text-zinc-500 text-xs uppercase tracking-wider">Battle.net Account</p>
+              <p className="text-xl font-semibold mt-1">{player.bnetTag}</p>
+            </div>
+
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+              <p className="text-zinc-500 text-xs uppercase tracking-wider">Discord Account</p>
+              {player.discordTag ? (
+                <p className="text-xl font-semibold mt-1 text-indigo-300">{player.discordTag}</p>
+              ) : (
+                <a
+                  href="/auth/discord-link"
+                  className="mt-1 flex items-center gap-2 text-indigo-400 hover:text-indigo-300 transition-colors"
+                >
+                  <span className="text-lg font-semibold">Verknüpfen</span>
+                  <span className="text-zinc-500 text-sm">→</span>
+                </a>
+              )}
+            </div>
           </div>
 
           <div>
