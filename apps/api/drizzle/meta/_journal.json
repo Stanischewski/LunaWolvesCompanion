@@ -43,6 +43,13 @@
       "when": 1779218868558,
       "tag": "0005_absent_karnak",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779226243564,
+      "tag": "0006_sudden_shape",
+      "breakpoints": true
     }
   ]
 }

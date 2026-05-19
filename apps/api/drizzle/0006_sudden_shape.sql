@@ -1,0 +1,1 @@
+ALTER TABLE "players" ADD COLUMN "display_name" varchar(64);

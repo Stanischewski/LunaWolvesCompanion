@@ -44,6 +44,7 @@ export async function guildRoutes(app: FastifyInstance) {
         guildRank: characters.guildRank,
         lastLogin: characters.lastLogin,
         bnetTag: players.bnetTag,
+        displayName: players.displayName,
       })
       .from(characters)
       .leftJoin(players, eq(characters.playerId, players.id))
@@ -51,8 +52,9 @@ export async function guildRoutes(app: FastifyInstance) {
 
     return rows.map((r) => ({
       ...r,
-      player: r.bnetTag ? { bnetTag: r.bnetTag } : null,
+      player: r.bnetTag ? { bnetTag: r.bnetTag, displayName: r.displayName ?? null } : null,
       bnetTag: undefined,
+      displayName: undefined,
     }));
   });
 

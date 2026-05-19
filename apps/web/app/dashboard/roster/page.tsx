@@ -10,7 +10,7 @@ interface Member {
   itemLevel: number;
   mPlusScore: number;
   guildRank: number;
-  player: { bnetTag: string } | null;
+  player: { bnetTag: string; displayName: string | null } | null;
 }
 
 export default async function RosterPage() {

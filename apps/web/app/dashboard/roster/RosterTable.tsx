@@ -12,7 +12,7 @@ interface Member {
   itemLevel: number;
   mPlusScore: number;
   guildRank: number;
-  player: { bnetTag: string } | null;
+  player: { bnetTag: string; displayName: string | null } | null;
 }
 
 const classColors: Record<string, string> = {
@@ -109,7 +109,11 @@ export function RosterTable({ members }: { members: Member[] }) {
               <td className="px-4 py-3 text-right text-zinc-400">
                 {char.mPlusScore > 0 ? char.mPlusScore : "–"}
               </td>
-              <td className="px-4 py-3 text-zinc-500">{char.player?.bnetTag ?? "–"}</td>
+              <td className="px-4 py-3 text-zinc-500">
+                {char.player
+                  ? (char.player.displayName ?? char.player.bnetTag)
+                  : "–"}
+              </td>
             </tr>
           ))}
         </tbody>

@@ -30,6 +30,7 @@ export const players = pgTable("players", {
   bnetTag: varchar("bnet_tag", { length: 64 }).notNull(),
   discordId: varchar("discord_id", { length: 32 }),
   discordTag: varchar("discord_tag", { length: 64 }),
+  displayName: varchar("display_name", { length: 64 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

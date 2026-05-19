@@ -1,5 +1,6 @@
 import { apiFetch } from "@/lib/api";
 import { LiveFeed } from "./components/LiveFeed";
+import { DisplayNameTile } from "./DisplayNameTile";
 
 interface Guild {
   id: string;
@@ -20,6 +21,7 @@ interface Player {
   id: string;
   bnetTag: string;
   discordTag: string | null;
+  displayName: string | null;
   characters: Character[];
 }
 
@@ -72,6 +74,8 @@ export default async function DashboardPage() {
                 </a>
               )}
             </div>
+
+            <DisplayNameTile current={player.displayName} />
           </div>
 
           <div>
