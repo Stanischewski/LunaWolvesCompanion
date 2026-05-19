@@ -6,6 +6,7 @@ interface SignupCharacter {
   id: string;
   name: string;
   class: string;
+  itemLevel: number;
 }
 
 interface Signup {
@@ -78,9 +79,17 @@ function SignupSummary({ signups }: { signups: Signup[] }) {
     dps: confirmed.filter((s) => s.role === "dps").length,
   };
 
+  const ilvlValues = confirmed
+    .map((s) => s.character.itemLevel)
+    .filter((v) => v > 0);
+  const avgIlvl =
+    ilvlValues.length > 0
+      ? Math.round(ilvlValues.reduce((a, b) => a + b, 0) / ilvlValues.length)
+      : null;
+
   return (
     <div className="mt-3 space-y-2">
-      <div className="flex items-center gap-4 text-sm">
+      <div className="flex items-center gap-4 text-sm flex-wrap">
         <span className="text-zinc-500 text-xs">Zusagen:</span>
         <span className="text-zinc-300">
           <span className="text-amber-400 font-medium">{counts.tank}</span>
@@ -90,6 +99,11 @@ function SignupSummary({ signups }: { signups: Signup[] }) {
           <span className="text-red-400 font-medium">{counts.dps}</span>
           <span className="text-zinc-600 mx-1">DPS</span>
         </span>
+        {avgIlvl !== null && (
+          <span className="text-zinc-400 text-xs">
+            Ø ilvl <span className="text-zinc-200 font-medium">{avgIlvl}</span>
+          </span>
+        )}
         {maybe.length > 0 && (
           <span className="text-yellow-400 text-xs">{maybe.length} Vielleicht</span>
         )}
@@ -111,6 +125,11 @@ function SignupSummary({ signups }: { signups: Signup[] }) {
                     className={`text-xs font-medium ${classColors[s.character.class] ?? "text-zinc-200"}`}
                   >
                     {s.character.name}
+                    {s.character.itemLevel > 0 && (
+                      <span className="text-zinc-500 font-normal ml-1">
+                        {s.character.itemLevel}
+                      </span>
+                    )}
                   </p>
                 ))}
               </div>
@@ -128,8 +147,11 @@ function SignupSummary({ signups }: { signups: Signup[] }) {
                 key={s.characterId}
                 className={`text-xs ${classColors[s.character.class] ?? "text-zinc-400"}`}
               >
-                {s.character.name}{" "}
-                <span className="text-zinc-600">({roleLabel[s.role]})</span>
+                {s.character.name}
+                {s.character.itemLevel > 0 && (
+                  <span className="text-zinc-600 ml-1">{s.character.itemLevel}</span>
+                )}
+                <span className="text-zinc-600 ml-1">({roleLabel[s.role]})</span>
               </span>
             ))}
           </div>

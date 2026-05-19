@@ -15,7 +15,7 @@ export async function raidRoutes(app: FastifyInstance) {
         orderBy: asc(raidEvents.scheduledAt),
         with: {
           signups: {
-            with: { character: { columns: { id: true, name: true, class: true } } },
+            with: { character: { columns: { id: true, name: true, class: true, itemLevel: true } } },
           },
         },
       });

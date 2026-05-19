@@ -9,7 +9,7 @@ interface RaidEvent {
   scheduledAt: string;
   raidType: string | null;
   minIlvl: number | null;
-  signups: { raidEventId: string; characterId: string; role: "tank" | "heal" | "dps"; status: "yes" | "maybe" | "no"; character: { id: string; name: string; class: string } }[];
+  signups: { raidEventId: string; characterId: string; role: "tank" | "heal" | "dps"; status: "yes" | "maybe" | "no"; character: { id: string; name: string; class: string; itemLevel: number } }[];
 }
 
 interface MyCharacter {
