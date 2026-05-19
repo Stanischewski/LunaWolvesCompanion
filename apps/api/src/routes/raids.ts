@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/index.js";
-import { raidEvents, raidSignups } from "../db/schema.js";
-import { eq, and, asc } from "drizzle-orm";
+import { raidEvents, raidSignups, characters } from "../db/schema.js";
+import { eq, and, asc, inArray } from "drizzle-orm";
 
 type RaidRole = "tank" | "heal" | "dps";
 type SignupStatus = "yes" | "maybe" | "no";
@@ -50,11 +50,55 @@ export async function raidRoutes(app: FastifyInstance) {
     return raid;
   });
 
+  app.patch<{
+    Params: { id: string };
+    Body: { title?: string; scheduledAt?: string; description?: string | null; raidType?: string | null; minIlvl?: number | null };
+  }>("/raids/:id", { onRequest: [app.authenticate] }, async (request, reply) => {
+    const { title, scheduledAt, description, raidType, minIlvl } = request.body;
+    const updates: Record<string, unknown> = {};
+    if (title !== undefined) updates.title = title;
+    if (scheduledAt !== undefined) updates.scheduledAt = new Date(scheduledAt);
+    if (description !== undefined) updates.description = description ?? null;
+    if (raidType !== undefined) updates.raidType = raidType ?? null;
+    if (minIlvl !== undefined) updates.minIlvl = minIlvl ?? null;
+    if (Object.keys(updates).length === 0)
+      return reply.status(400).send({ error: "Keine Änderungen" });
+    const [updated] = await db
+      .update(raidEvents)
+      .set(updates)
+      .where(eq(raidEvents.id, request.params.id))
+      .returning();
+    if (!updated) return reply.status(404).send({ error: "Raid nicht gefunden" });
+    return updated;
+  });
+
   app.post<{
     Params: { id: string };
     Body: { characterId: string; role: RaidRole; status?: SignupStatus };
   }>("/raids/:id/signup", { onRequest: [app.authenticate] }, async (request, reply) => {
     const { characterId, role, status = "yes" } = request.body;
+
+    // Enforce one character per player per raid: remove any existing signup by the same player
+    const char = await db.query.characters.findFirst({
+      where: eq(characters.id, characterId),
+      columns: { playerId: true },
+    });
+    if (char?.playerId) {
+      const playerChars = await db.query.characters.findMany({
+        where: eq(characters.playerId, char.playerId),
+        columns: { id: true },
+      });
+      const otherIds = playerChars.map((c) => c.id).filter((id) => id !== characterId);
+      if (otherIds.length > 0) {
+        await db.delete(raidSignups).where(
+          and(
+            eq(raidSignups.raidEventId, request.params.id),
+            inArray(raidSignups.characterId, otherIds),
+          ),
+        );
+      }
+    }
+
     const [signup] = await db
       .insert(raidSignups)
       .values({ raidEventId: request.params.id, characterId, role, status })

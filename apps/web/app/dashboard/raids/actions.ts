@@ -1,5 +1,5 @@
 "use server";
-import { apiPost } from "@/lib/api";
+import { apiPost, apiPatch } from "@/lib/api";
 import { revalidatePath } from "next/cache";
 import { resolveGuild } from "@/lib/guild";
 
@@ -20,6 +20,25 @@ export async function createRaidAction(formData: FormData) {
     ...(description && { description }),
     ...(raidType && { raidType }),
     ...(minIlvl !== undefined && !isNaN(minIlvl) && { minIlvl }),
+  });
+
+  revalidatePath("/dashboard/raids");
+}
+
+export async function editRaidAction(raidId: string, formData: FormData) {
+  const title = formData.get("title") as string;
+  const scheduledAt = formData.get("scheduledAt") as string;
+  const description = (formData.get("description") as string) || null;
+  const raidType = (formData.get("raidType") as string) || null;
+  const minIlvlStr = formData.get("minIlvl") as string;
+  const minIlvl = minIlvlStr ? parseInt(minIlvlStr, 10) : null;
+
+  await apiPatch(`/raids/${raidId}`, {
+    title,
+    scheduledAt: new Date(scheduledAt).toISOString(),
+    description,
+    raidType,
+    minIlvl: minIlvl !== null && !isNaN(minIlvl) ? minIlvl : null,
   });
 
   revalidatePath("/dashboard/raids");

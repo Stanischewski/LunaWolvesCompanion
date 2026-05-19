@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
-import { createRaidAction, signupRaidAction } from "./actions";
+import { createRaidAction, editRaidAction, signupRaidAction } from "./actions";
 
 interface SignupCharacter {
   id: string;
@@ -252,6 +252,114 @@ function CreateRaidModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function toDatetimeLocal(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function EditRaidModal({ raid, onClose }: { raid: RaidEvent; onClose: () => void }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function submit(formData: FormData) {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await editRaidAction(raid.id, formData);
+        onClose();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Fehler beim Speichern");
+      }
+    });
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <h2 className="text-lg font-bold mb-4">Raid bearbeiten</h2>
+      <form action={submit} className="space-y-4">
+        <div>
+          <label className="block text-xs text-zinc-400 uppercase tracking-wider mb-1">
+            Titel *
+          </label>
+          <input
+            name="title"
+            required
+            defaultValue={raid.title}
+            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-zinc-400 uppercase tracking-wider mb-1">
+            Datum & Uhrzeit *
+          </label>
+          <input
+            name="scheduledAt"
+            type="datetime-local"
+            required
+            defaultValue={toDatetimeLocal(raid.scheduledAt)}
+            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-zinc-400 uppercase tracking-wider mb-1">
+            Beschreibung
+          </label>
+          <textarea
+            name="description"
+            rows={3}
+            defaultValue={raid.description ?? ""}
+            placeholder="Infos zum Raid, Anforderungen, Hinweise…"
+            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 resize-none"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-zinc-400 uppercase tracking-wider mb-1">
+              Raid-Typ
+            </label>
+            <input
+              name="raidType"
+              placeholder="Normal, Heroic…"
+              defaultValue={raid.raidType ?? ""}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-400 uppercase tracking-wider mb-1">
+              Min. ilvl
+            </label>
+            <input
+              name="minIlvl"
+              type="number"
+              min={1}
+              defaultValue={raid.minIlvl ?? ""}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+        </div>
+        {error && <p className="text-red-400 text-xs">{error}</p>}
+        <div className="flex gap-3 pt-2">
+          <button
+            type="submit"
+            disabled={pending}
+            className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded px-4 py-2 text-sm font-medium transition-colors"
+          >
+            {pending ? "Speichere…" : "Speichern"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          >
+            Abbrechen
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function SignupPanel({
   raid,
   myCharacters,
@@ -366,10 +474,12 @@ function RaidRow({
   isPast?: boolean;
 }) {
   const [showSignup, setShowSignup] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const confirmedCount = raid.signups.filter((s) => s.status === "yes").length;
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3">
+      {showEdit && <EditRaidModal raid={raid} onClose={() => setShowEdit(false)} />}
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0 pr-4">
           <p className="font-semibold">{raid.title}</p>
@@ -378,14 +488,21 @@ function RaidRow({
             <p className="text-zinc-500 text-sm mt-1 leading-snug">{raid.description}</p>
           )}
         </div>
-        <div className="flex items-center gap-4 shrink-0">
-          <div className="text-right text-sm text-zinc-500 space-y-0.5">
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="text-right text-sm text-zinc-500 space-y-0.5 mr-2">
             {raid.raidType && <p>{raid.raidType}</p>}
             {raid.minIlvl && <p>min {raid.minIlvl} ilvl</p>}
             {confirmedCount > 0 && (
               <p className="text-emerald-400">{confirmedCount} angemeldet</p>
             )}
           </div>
+          <button
+            onClick={() => setShowEdit(true)}
+            title="Raid bearbeiten"
+            className="text-zinc-500 hover:text-zinc-200 px-2 py-1.5 rounded transition-colors text-sm"
+          >
+            ✎
+          </button>
           {!isPast && (
             <button
               onClick={() => setShowSignup((v) => !v)}
