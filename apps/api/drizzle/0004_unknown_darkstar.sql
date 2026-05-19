@@ -1,0 +1,1 @@
+ALTER TABLE "raid_events" ADD COLUMN "description" text;

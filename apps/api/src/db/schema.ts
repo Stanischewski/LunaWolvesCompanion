@@ -3,6 +3,7 @@ import {
   pgEnum,
   uuid,
   varchar,
+  text,
   integer,
   timestamp,
   jsonb,
@@ -85,6 +86,7 @@ export const raidEvents = pgTable("raid_events", {
     .notNull()
     .references(() => guilds.id, { onDelete: "cascade" }),
   title: varchar("title", { length: 128 }).notNull(),
+  description: text("description"),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
   raidType: varchar("raid_type", { length: 64 }),
   minIlvl: integer("min_ilvl"),

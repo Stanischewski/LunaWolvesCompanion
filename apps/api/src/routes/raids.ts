@@ -13,21 +13,27 @@ export async function raidRoutes(app: FastifyInstance) {
       return db.query.raidEvents.findMany({
         where: eq(raidEvents.guildId, request.params.guildId),
         orderBy: asc(raidEvents.scheduledAt),
+        with: {
+          signups: {
+            with: { character: { columns: { id: true, name: true, class: true } } },
+          },
+        },
       });
     },
   );
 
   app.post<{
     Params: { guildId: string };
-    Body: { title: string; scheduledAt: string; raidType?: string; minIlvl?: number };
+    Body: { title: string; scheduledAt: string; description?: string; raidType?: string; minIlvl?: number };
   }>("/guilds/:guildId/raids", { onRequest: [app.authenticate] }, async (request, reply) => {
-    const { title, scheduledAt, raidType, minIlvl } = request.body;
+    const { title, scheduledAt, description, raidType, minIlvl } = request.body;
     const [raid] = await db
       .insert(raidEvents)
       .values({
         guildId: request.params.guildId,
         title,
         scheduledAt: new Date(scheduledAt),
+        ...(description && { description }),
         ...(raidType && { raidType }),
         ...(minIlvl !== undefined && { minIlvl }),
       })
