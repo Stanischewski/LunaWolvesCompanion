@@ -29,6 +29,7 @@ export const players = pgTable("players", {
   bnetId: varchar("bnet_id", { length: 64 }).notNull().unique(),
   bnetTag: varchar("bnet_tag", { length: 64 }).notNull(),
   discordId: varchar("discord_id", { length: 32 }),
+  discordTag: varchar("discord_tag", { length: 64 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

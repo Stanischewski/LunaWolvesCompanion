@@ -36,6 +36,13 @@
       "when": 1779214805949,
       "tag": "0004_unknown_darkstar",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779218868558,
+      "tag": "0005_absent_karnak",
+      "breakpoints": true
     }
   ]
 }
