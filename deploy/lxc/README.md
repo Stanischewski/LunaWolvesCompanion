@@ -62,17 +62,44 @@ pct exec 201 -- bash /root/setup.sh
 pct exec 201 -- cat /root/redis-credentials.txt
 ```
 
-### 4. Node.js auf App-Containern (CT 202, 203, 204)
+### 4. App-Container einrichten (CT 202, 203, 204)
+
+`setup.sh` installiert Node.js, pnpm, PM2, clont das Repo und baut die App.
+Wenn `.env` noch fehlt, gibt es eine Warnung — PM2 startet erst nach Schritt 5.
 
 ```bash
-# Für jeden App-Container wiederholen:
-for CT in 202 203 204; do
-    pct push $CT 04-setup-node.sh /root/setup.sh
-    pct exec $CT -- bash /root/setup.sh
-done
+pct exec 202 -- bash -c "curl -fsSL https://raw.githubusercontent.com/Stanischewski/LunaWolvesCompanion/main/deploy/lxc/setup.sh | bash -s api"
+pct exec 203 -- bash -c "curl -fsSL https://raw.githubusercontent.com/Stanischewski/LunaWolvesCompanion/main/deploy/lxc/setup.sh | bash -s bot"
+pct exec 204 -- bash -c "curl -fsSL https://raw.githubusercontent.com/Stanischewski/LunaWolvesCompanion/main/deploy/lxc/setup.sh | bash -s web"
 ```
 
-### 5. Monitoring (CT 205)
+### 5. Environment konfigurieren
+
+Die `.env.example`-Dateien als Vorlage auf die Container kopieren und anpassen:
+
+```bash
+pct push 202 apps/api/.env.example /opt/lunawolves/apps/api/.env
+pct exec 202 -- nano /opt/lunawolves/apps/api/.env
+
+pct push 203 apps/bot/.env.example /opt/lunawolves/apps/bot/.env
+pct exec 203 -- nano /opt/lunawolves/apps/bot/.env
+
+pct push 204 apps/web/.env.example /opt/lunawolves/apps/web/.env
+pct exec 204 -- nano /opt/lunawolves/apps/web/.env
+```
+
+### 6. PM2 starten (falls .env beim Setup fehlte)
+
+Falls setup.sh in Schritt 4 ohne `.env` gelaufen ist, jetzt nach dem Konfigurieren
+setup.sh erneut ausführen — es erkennt das vorhandene Repo und startet PM2:
+
+```bash
+pct exec 202 -- bash /opt/lunawolves/deploy/lxc/setup.sh api
+pct exec 203 -- bash /opt/lunawolves/deploy/lxc/setup.sh bot
+pct exec 204 -- bash /opt/lunawolves/deploy/lxc/setup.sh web
+```
+
+### 7. Monitoring (CT 205)
 
 ```bash
 pct push 205 05-setup-monitoring.sh /root/setup.sh
@@ -81,16 +108,7 @@ pct exec 205 -- bash /root/setup.sh
 
 Dann im Browser: http://10.10.10.205:3001
 
-### 6. Environment einrichten
-
-```bash
-# .env Template auf die App-Container kopieren
-for CT in 202 203 204; do
-    pct push $CT env.template /opt/lunawolves/.env
-    # Dann im Container die Werte anpassen:
-    pct exec $CT -- nano /opt/lunawolves/.env
-done
-```
+---
 
 ## Ports (intern)
 
@@ -98,10 +116,19 @@ done
 |-----------|----------------|-------|
 | CT 200    | PostgreSQL     | 5432  |
 | CT 201    | Redis          | 6379  |
-| CT 202    | Fastify API    | 3000  |
-| CT 203    | Discord Bot    | 3000  |
+| CT 202    | Fastify API    | 3001  |
+| CT 203    | Discord Bot    | —     |
 | CT 204    | Next.js        | 3000  |
 | CT 205    | Uptime Kuma    | 3001  |
+
+## Updates einspielen
+
+```bash
+# App neu bauen und PM2 neu starten (auf dem Proxmox-Host ausführen):
+pct exec 202 -- bash /opt/lunawolves/deploy/lxc/setup.sh api
+pct exec 203 -- bash /opt/lunawolves/deploy/lxc/setup.sh bot
+pct exec 204 -- bash /opt/lunawolves/deploy/lxc/setup.sh web
+```
 
 ## Backup-Strategie
 
@@ -123,8 +150,9 @@ done
 # In einen Container einloggen
 pct enter 202
 
-# Logs eines Containers ansehen
-pct exec 202 -- journalctl -u lunawolves -f
+# PM2 Status / Logs eines Containers
+pct exec 202 -- pm2 status
+pct exec 202 -- pm2 logs lw-api
 
 # Container neu starten
 pct reboot 202
