@@ -2,11 +2,11 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
-    "paths": {
-      "@guild/lua-parser": ["../../packages/lua-parser/src/index.ts"],
-      "@guild/shared-types": ["../../packages/shared-types/src/index.ts"]
-    }
+    "rootDir": "./src"
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/lua-parser" },
+    { "path": "../../packages/shared-types" }
+  ]
 }
