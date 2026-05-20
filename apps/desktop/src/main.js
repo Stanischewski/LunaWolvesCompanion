@@ -63,6 +63,14 @@ function currentSettings() {
   };
 }
 
+async function loadAddonStatus() {
+  try {
+    const status = await invoke("get_addon_status");
+    const el = document.querySelector("#addon-installed-version");
+    if (el) el.textContent = status.installed_version ?? "Nicht installiert";
+  } catch (_) {}
+}
+
 async function loadConfig() {
   try {
     const config = await invoke("get_config");
@@ -122,6 +130,7 @@ async function detectPath() {
 
 window.addEventListener("DOMContentLoaded", () => {
   loadConfig();
+  loadAddonStatus();
   showTab("status");
 
   document.querySelector("#settings-form").addEventListener("submit", saveSettings);
@@ -129,6 +138,14 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelector("#detect-btn").addEventListener("click", detectPath);
   document.querySelector("#sync-now").addEventListener("click", () => {
     invoke("sync_now").catch((err) => setStatus("error", `Fehler: ${err}`));
+  });
+
+  document.querySelector("#install-addon-btn").addEventListener("click", () => {
+    document.querySelector("#install-addon-btn").disabled = true;
+    invoke("install_addon").catch((err) => {
+      setStatus("error", `Addon-Installation fehlgeschlagen: ${err}`);
+      document.querySelector("#install-addon-btn").disabled = false;
+    });
   });
 
   document.querySelector("#update-btn").addEventListener("click", async () => {
@@ -163,6 +180,26 @@ window.addEventListener("DOMContentLoaded", () => {
   listen("login-changed", (event) => {
     applyLoginState(event.payload === true);
   });
+  // Neue Addon-Version auf GitHub gefunden.
+  listen("addon-update-available", (event) => {
+    const version = event.payload;
+    const latest = document.querySelector("#addon-latest-version");
+    const btn = document.querySelector("#install-addon-btn");
+    if (latest) latest.textContent = `v${version}`;
+    if (btn) btn.hidden = false;
+  });
+
+  // Addon wurde erfolgreich installiert.
+  listen("addon-installed", (event) => {
+    const version = event.payload;
+    const installed = document.querySelector("#addon-installed-version");
+    const latest = document.querySelector("#addon-latest-version");
+    const btn = document.querySelector("#install-addon-btn");
+    if (installed) installed.textContent = `v${version}`;
+    if (latest) latest.textContent = `v${version} (aktuell)`;
+    if (btn) { btn.hidden = true; btn.disabled = false; }
+  });
+
   // Neues Release auf GitHub gefunden.
   listen("update-available", (event) => {
     const { version } = event.payload;

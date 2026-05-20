@@ -300,6 +300,142 @@ fn detect_sv_path() -> Option<String> {
     None
 }
 
+// ===================== Addon-Verwaltung =====================
+
+/// Findet den Interface/AddOns-Ordner der WoW-Retail-Installation.
+fn detect_addons_path() -> Option<PathBuf> {
+    let suffixes = [
+        r"Battle.net\World of Warcraft",
+        "World of Warcraft",
+        r"Games\World of Warcraft",
+        r"Program Files (x86)\World of Warcraft",
+        r"Program Files\World of Warcraft",
+    ];
+    for drive in 'C'..='Z' {
+        for suffix in suffixes {
+            let addons = PathBuf::from(format!("{drive}:\\{suffix}"))
+                .join("_retail_")
+                .join("Interface")
+                .join("AddOns");
+            if addons.is_dir() {
+                return Some(addons);
+            }
+        }
+    }
+    None
+}
+
+/// Liest die installierte Addon-Version aus der .toc-Datei.
+fn read_installed_addon_version(addons_path: &Path) -> Option<String> {
+    let toc = addons_path.join("LunaWolves").join("LunaWolves.toc");
+    let content = std::fs::read_to_string(toc).ok()?;
+    content.lines().find_map(|l| {
+        l.strip_prefix("## Version:")
+            .map(|v| v.trim().to_string())
+    })
+}
+
+/// Ruft das neueste Release aus der Addon-Repo ab.
+/// Gibt `(version, download_url)` zurueck.
+fn fetch_latest_addon_release() -> Result<(String, String), String> {
+    let body: serde_json::Value = reqwest::blocking::Client::new()
+        .get("https://api.github.com/repos/Stanischewski/LunaWolves/releases/latest")
+        .header("User-Agent", "LunaWolves-Agent")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .map_err(|e| format!("GitHub-Anfrage fehlgeschlagen: {e}"))?
+        .json()
+        .map_err(|e| format!("Antwort ungültig: {e}"))?;
+
+    let tag = body["tag_name"]
+        .as_str()
+        .ok_or("Kein tag_name in Release")?
+        .trim_start_matches('v')
+        .to_string();
+
+    let url = body["assets"]
+        .as_array()
+        .and_then(|assets| {
+            assets
+                .iter()
+                .find(|a| a["name"].as_str().is_some_and(|n| n.ends_with(".zip")))
+        })
+        .and_then(|a| a["browser_download_url"].as_str())
+        .ok_or("Kein .zip-Asset im Release gefunden")?
+        .to_string();
+
+    Ok((tag, url))
+}
+
+/// Laedt das Addon herunter und entpackt es in den AddOns-Ordner.
+fn install_addon_blocking(app: &AppHandle) {
+    let addons_path = match detect_addons_path() {
+        Some(p) => p,
+        None => {
+            emit_status(app, "error", "Kein WoW-AddOns-Ordner gefunden.");
+            return;
+        }
+    };
+    emit_status(app, "running", "Neueste Addon-Version wird abgefragt …");
+    let (version, url) = match fetch_latest_addon_release() {
+        Ok(r) => r,
+        Err(e) => {
+            emit_status(app, "error", e);
+            return;
+        }
+    };
+    emit_status(
+        app,
+        "running",
+        format!("LunaWolves v{version} wird heruntergeladen …"),
+    );
+    let bytes = match reqwest::blocking::Client::new()
+        .get(&url)
+        .header("User-Agent", "LunaWolves-Agent")
+        .send()
+        .and_then(|r| r.bytes())
+    {
+        Ok(b) => b,
+        Err(e) => {
+            emit_status(app, "error", format!("Download fehlgeschlagen: {e}"));
+            return;
+        }
+    };
+    emit_status(app, "running", "Addon wird entpackt …");
+    let cursor = std::io::Cursor::new(bytes);
+    let mut archive = match zip::ZipArchive::new(cursor) {
+        Ok(a) => a,
+        Err(e) => {
+            emit_status(app, "error", format!("Zip-Datei fehlerhaft: {e}"));
+            return;
+        }
+    };
+    if let Err(e) = archive.extract(&addons_path) {
+        emit_status(app, "error", format!("Entpacken fehlgeschlagen: {e}"));
+        return;
+    }
+    emit_status(
+        app,
+        "ok",
+        format!("LunaWolves v{version} erfolgreich installiert."),
+    );
+    let _ = app.emit("addon-installed", &version);
+}
+
+/// Prueft im Hintergrund ob eine neue Addon-Version verfuegbar ist.
+fn spawn_addon_update_check(app: AppHandle) {
+    std::thread::spawn(move || {
+        let Ok((version, _)) = fetch_latest_addon_release() else {
+            return;
+        };
+        let installed = detect_addons_path()
+            .and_then(|p| read_installed_addon_version(&p));
+        if installed.as_deref() != Some(version.as_str()) {
+            let _ = app.emit("addon-update-available", &version);
+        }
+    });
+}
+
 // ===================== Auto-Update =====================
 
 /// Prueft im Hintergrund ob ein neues Release verfuegbar ist.
@@ -430,6 +566,23 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Liefert die installierte Addon-Version und den AddOns-Pfad ans Frontend.
+#[tauri::command]
+fn get_addon_status() -> serde_json::Value {
+    let addons_path = detect_addons_path();
+    let installed_version = addons_path.as_ref().and_then(|p| read_installed_addon_version(p));
+    serde_json::json!({
+        "installed_version": installed_version,
+        "addons_path": addons_path.map(|p| p.to_string_lossy().into_owned()),
+    })
+}
+
+/// Laedt das neueste Addon herunter und installiert es.
+#[tauri::command]
+fn install_addon(app: AppHandle) {
+    std::thread::spawn(move || install_addon_blocking(&app));
+}
+
 // ===================== App-Einstieg =====================
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -444,7 +597,9 @@ pub fn run() {
             logout,
             sync_now,
             detect_saved_variables_path,
-            install_update
+            install_update,
+            get_addon_status,
+            install_addon
         ])
         .setup(|app| {
             // AppHandle: ein klonbarer, thread-sicherer Griff auf die laufende App.
@@ -460,7 +615,10 @@ pub fn run() {
             spawn_watcher(handle.clone());
 
             // Update-Pruefung beim Start (schlaegt still fehl wenn kein Netz/kein Update).
-            tauri::async_runtime::spawn(check_for_update(handle));
+            tauri::async_runtime::spawn(check_for_update(handle.clone()));
+
+            // Addon-Update-Pruefung beim Start.
+            spawn_addon_update_check(handle);
 
             // Close-to-Tray: X schliesst das Fenster nicht, sondern versteckt es.
             // is_quitting erlaubt dem Tray-Menue-Eintrag "Beenden" das echte Schliessen.
