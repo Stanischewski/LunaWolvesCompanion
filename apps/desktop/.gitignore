@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Tauri signing keys — niemals committen
+luna-wolves.key
+luna-wolves.key.pub

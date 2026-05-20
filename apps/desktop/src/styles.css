@@ -273,6 +273,30 @@ button:hover {
   word-break: break-word;
 }
 
+/* ===================== Update-Banner ===================== */
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  border: 1px solid #1e40af;
+  border-radius: 6px;
+  background-color: rgba(30, 58, 138, 0.3);
+  color: #93c5fd;
+  font-size: 0.85rem;
+}
+
+.update-banner button {
+  width: auto;
+  flex-shrink: 0;
+  margin-top: 0;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+}
+
 /* ===================== Statusmeldung ===================== */
 
 .status {

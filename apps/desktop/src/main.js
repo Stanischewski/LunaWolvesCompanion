@@ -131,6 +131,17 @@ window.addEventListener("DOMContentLoaded", () => {
     invoke("sync_now").catch((err) => setStatus("error", `Fehler: ${err}`));
   });
 
+  document.querySelector("#update-btn").addEventListener("click", async () => {
+    setStatus("running", "Update wird heruntergeladen und installiert …");
+    document.querySelector("#update-btn").disabled = true;
+    try {
+      await invoke("install_update");
+    } catch (err) {
+      setStatus("error", `Update fehlgeschlagen: ${err}`);
+      document.querySelector("#update-btn").disabled = false;
+    }
+  });
+
   document.querySelector("#logout-btn").addEventListener("click", async () => {
     try {
       await invoke("logout");
@@ -152,6 +163,17 @@ window.addEventListener("DOMContentLoaded", () => {
   listen("login-changed", (event) => {
     applyLoginState(event.payload === true);
   });
+  // Neues Release auf GitHub gefunden.
+  listen("update-available", (event) => {
+    const { version } = event.payload;
+    const banner = document.querySelector("#update-banner");
+    const text = document.querySelector("#update-text");
+    if (banner && text) {
+      text.textContent = `Update verfügbar: v${version}`;
+      banner.hidden = false;
+    }
+  });
+
   // Ausstehende Web-DKP-Eintraege, die noch nicht im Addon angekommen sind.
   listen("pending-entries", (event) => {
     const count = event.payload;

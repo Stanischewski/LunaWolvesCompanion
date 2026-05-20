@@ -15,6 +15,7 @@ use tauri::{
     AppHandle, Emitter, Manager, State, WindowEvent,
 };
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 use tiny_http::{Header, Response, Server};
 
 // ===================== Konfiguration =====================
@@ -299,6 +300,28 @@ fn detect_sv_path() -> Option<String> {
     None
 }
 
+// ===================== Auto-Update =====================
+
+/// Prueft im Hintergrund ob ein neues Release verfuegbar ist.
+/// Sendet `update-available` ans Frontend wenn ja; schlaegt still fehl wenn nicht.
+async fn check_for_update(app: AppHandle) {
+    let Ok(updater) = app.updater() else { return };
+    let Ok(Some(update)) = updater.check().await else { return };
+
+    #[derive(Clone, Serialize)]
+    struct UpdateInfo {
+        version: String,
+        notes: Option<String>,
+    }
+    let _ = app.emit(
+        "update-available",
+        UpdateInfo {
+            version: update.version.clone(),
+            notes: update.body.clone(),
+        },
+    );
+}
+
 // ===================== Tauri Commands =====================
 // Commands sind Rust-Funktionen, die das Frontend per `invoke("name", ...)` aufruft.
 
@@ -394,19 +417,34 @@ fn detect_saved_variables_path() -> Result<String, String> {
         .ok_or_else(|| "Keine WoW-Installation gefunden. Bitte den Pfad manuell eintragen.".into())
 }
 
+/// Laedt das Update herunter und installiert es. Die App startet danach neu.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
+        return Ok(());
+    };
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ===================== App-Einstieg =====================
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_settings,
             start_login,
             logout,
             sync_now,
-            detect_saved_variables_path
+            detect_saved_variables_path,
+            install_update
         ])
         .setup(|app| {
             // AppHandle: ein klonbarer, thread-sicherer Griff auf die laufende App.
@@ -419,7 +457,10 @@ pub fn run() {
             });
 
             // Datei-Ueberwachung im Hintergrund starten.
-            spawn_watcher(handle);
+            spawn_watcher(handle.clone());
+
+            // Update-Pruefung beim Start (schlaegt still fehl wenn kein Netz/kein Update).
+            tauri::async_runtime::spawn(check_for_update(handle));
 
             // Close-to-Tray: X schliesst das Fenster nicht, sondern versteckt es.
             // is_quitting erlaubt dem Tray-Menue-Eintrag "Beenden" das echte Schliessen.
