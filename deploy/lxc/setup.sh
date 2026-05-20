@@ -102,7 +102,7 @@ pnpm install --frozen-lockfile
 
 step "App '$APP' und Workspace-Pakete bauen ..."
 # ...@guild/$APP baut die App und alle ihre lokalen workspace:* Abhängigkeiten
-pnpm --filter "...@guild/${APP}" run build
+pnpm --filter "@guild/${APP}..." run build
 
 # --- Schritt 7: .env prüfen --------------------------------------------------
 
