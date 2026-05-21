@@ -67,18 +67,21 @@ export async function syncEquipment(log: FastifyBaseLogger) {
   }
 
   const now = new Date();
-  const activePlayers = await db.query.players.findMany({
-    where: and(
-      isNotNull(players.bnetAccessToken),
-      gt(players.bnetTokenExpiry, now),
-    ),
-    with: {
-      characters: { columns: { id: true, name: true, realm: true } },
-    },
-  });
+  const rows = await db
+    .select({
+      playerId: players.id,
+      bnetTag: players.bnetTag,
+      bnetAccessToken: players.bnetAccessToken,
+      charId: characters.id,
+      charName: characters.name,
+      charRealm: characters.realm,
+    })
+    .from(players)
+    .innerJoin(characters, eq(characters.playerId, players.id))
+    .where(and(isNotNull(players.bnetAccessToken), gt(players.bnetTokenExpiry, now)));
 
-  if (activePlayers.length === 0) {
-    log.info("[Equipment] Keine Spieler mit gültigem Token");
+  if (rows.length === 0) {
+    log.info("[Equipment] Keine Spieler mit verknüpften Charakteren und gültigem Token");
     return;
   }
 
@@ -90,65 +93,64 @@ export async function syncEquipment(log: FastifyBaseLogger) {
     return;
   }
 
-  log.info(`[Equipment] Sync für ${activePlayers.length} Spieler`);
+  const playerCount = new Set(rows.map((r) => r.playerId)).size;
+  log.info(`[Equipment] Sync für ${playerCount} Spieler, ${rows.length} Charaktere`);
 
-  for (const player of activePlayers) {
-    for (const char of player.characters) {
-      const realmSlug = char.realm
-        .replace(/([a-z\d])([A-Z])/g, "$1-$2")   // camelCase → kebab: "DasKonsortium" → "Das-Konsortium"
-        .replace(/([A-Z]+)([A-Z][a-z])/g, "$1-$2")
-        .toLowerCase()
-        .replace(/'/g, "")
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "");
-      const charName = char.name.toLowerCase();
+  for (const char of rows) {
+    const realmSlug = char.charRealm
+      .replace(/([a-z\d])([A-Z])/g, "$1-$2")
+      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1-$2")
+      .toLowerCase()
+      .replace(/'/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    const charName = char.charName.toLowerCase();
 
-      try {
-        const res = await fetch(
-          `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${charName}/equipment?namespace=profile-${region}&locale=de_DE`,
-          { headers: { Authorization: `Bearer ${player.bnetAccessToken}` } },
+    try {
+      const res = await fetch(
+        `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${charName}/equipment?namespace=profile-${region}&locale=de_DE`,
+        { headers: { Authorization: `Bearer ${char.bnetAccessToken}` } },
+      );
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "");
+        log.warn(
+          `[Equipment] ${char.charName}-${char.charRealm} (${char.bnetTag}): HTTP ${res.status} — ${errBody.slice(0, 300)}`,
         );
+        continue;
+      }
 
-        if (!res.ok) {
-          const errBody = await res.text().catch(() => "");
-          log.warn(
-            `[Equipment] ${char.name}-${char.realm} (${player.bnetTag}): HTTP ${res.status} — ${errBody.slice(0, 300)}`,
-          );
-          continue;
-        }
+      const data = (await res.json()) as { equipped_items?: BnetEquipItem[] };
 
-        const data = (await res.json()) as { equipped_items?: BnetEquipItem[] };
-
-        for (const item of data.equipped_items ?? []) {
-          const iconUrl = await resolveIconUrl(item.media.id, clientToken);
-          await db
-            .insert(characterEquipment)
-            .values({
-              characterId: char.id,
-              slot: item.slot.type,
+      for (const item of data.equipped_items ?? []) {
+        const iconUrl = await resolveIconUrl(item.media.id, clientToken);
+        await db
+          .insert(characterEquipment)
+          .values({
+            characterId: char.charId,
+            slot: item.slot.type,
+            itemId: item.item.id,
+            itemName: item.name,
+            itemLevel: item.level.value,
+            quality: item.quality.type,
+            iconUrl,
+          })
+          .onConflictDoUpdate({
+            target: [characterEquipment.characterId, characterEquipment.slot],
+            set: {
               itemId: item.item.id,
               itemName: item.name,
               itemLevel: item.level.value,
               quality: item.quality.type,
               iconUrl,
-            })
-            .onConflictDoUpdate({
-              target: [characterEquipment.characterId, characterEquipment.slot],
-              set: {
-                itemId: item.item.id,
-                itemName: item.name,
-                itemLevel: item.level.value,
-                quality: item.quality.type,
-                iconUrl,
-                syncedAt: new Date(),
-              },
-            });
-        }
-
-        log.info(`[Equipment] ${char.name} (${char.realm}): ${data.equipped_items?.length ?? 0} Slots gespeichert`);
-      } catch (e) {
-        log.error({ err: e }, `[Equipment] Fehler bei ${char.name}`);
+              syncedAt: new Date(),
+            },
+          });
       }
+
+      log.info(`[Equipment] ${char.charName} (${char.charRealm}): ${data.equipped_items?.length ?? 0} Slots gespeichert`);
+    } catch (e) {
+      log.error({ err: e }, `[Equipment] Fehler bei ${char.charName}`);
     }
   }
 
