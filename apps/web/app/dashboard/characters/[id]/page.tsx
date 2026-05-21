@@ -3,6 +3,21 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { notFound } from "next/navigation";
 
+interface RioRun {
+  dungeon: string;
+  short_name: string;
+  mythic_level: number;
+  clear_time_ms: number;
+  par_time_ms: number;
+  num_keystone_upgrades: number;
+  score: number;
+}
+
+interface RioProfile {
+  mythic_plus_scores_by_season: { season: string; scores: { all: number } }[];
+  mythic_plus_best_runs: RioRun[];
+}
+
 interface EquipmentSlot {
   slot: string;
   itemId: number;
@@ -85,6 +100,16 @@ export default async function CharacterPage({
   const { id } = await params;
   const char = await apiFetch<CharacterDetail>(`/characters/${id}`).catch(() => null);
   if (!char) notFound();
+
+  const rioProfile = await fetch(
+    `https://raider.io/api/v1/characters/profile?region=eu&realm=${encodeURIComponent(char.realm)}&name=${encodeURIComponent(char.name)}&fields=mythic_plus_scores_by_season:current,mythic_plus_best_runs`,
+    { next: { revalidate: 300 } },
+  )
+    .then((r) => (r.ok ? (r.json() as Promise<RioProfile>) : null))
+    .catch(() => null);
+
+  const rioScore =
+    rioProfile?.mythic_plus_scores_by_season?.[0]?.scores?.all ?? null;
 
   const equipMap = Object.fromEntries(char.equipment.map((e) => [e.slot, e]));
   const colorClass = classColors[char.class] ?? "text-zinc-100";
@@ -195,6 +220,46 @@ export default async function CharacterPage({
             );
           })}
         </div>
+      )}
+      {/* Mythic+ */}
+      <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mt-8 mb-3">
+        Mythic+
+      </h2>
+
+      {rioProfile === null ? (
+        <p className="text-zinc-600 text-sm">Keine Raider.IO-Daten gefunden.</p>
+      ) : rioProfile.mythic_plus_best_runs.length === 0 ? (
+        <p className="text-zinc-600 text-sm">Noch keine M+-Läufe in dieser Season.</p>
+      ) : (
+        <>
+          {rioScore !== null && (
+            <p className="text-zinc-400 text-sm mb-3">
+              Season-Score:{" "}
+              <span className="font-semibold text-zinc-100">{Math.round(rioScore)}</span>
+            </p>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {rioProfile.mythic_plus_best_runs.map((run) => {
+              const upgrades = run.num_keystone_upgrades;
+              const inTime = upgrades > 0;
+              const upgradeLabel = upgrades >= 3 ? "+3" : upgrades === 2 ? "+2" : upgrades === 1 ? "+1" : "–";
+              const timedColor = upgrades >= 2 ? "text-green-400" : upgrades === 1 ? "text-yellow-400" : "text-red-400";
+              return (
+                <div
+                  key={run.dungeon}
+                  className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5"
+                >
+                  <p className="text-zinc-500 text-xs truncate mb-0.5">{run.short_name}</p>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-lg font-bold">+{run.mythic_level}</span>
+                    <span className={`text-sm font-semibold ${timedColor}`}>{upgradeLabel}</span>
+                  </div>
+                  <p className="text-zinc-500 text-xs mt-0.5">{Math.round(run.score)} Pkt.</p>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
