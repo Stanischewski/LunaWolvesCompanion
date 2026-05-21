@@ -145,7 +145,7 @@ export async function syncEquipment(log: FastifyBaseLogger) {
             });
         }
 
-        log.debug(`[Equipment] ${char.name}: ${data.equipped_items?.length ?? 0} Slots`);
+        log.info(`[Equipment] ${char.name} (${char.realm}): ${data.equipped_items?.length ?? 0} Slots gespeichert`);
       } catch (e) {
         log.error({ err: e }, `[Equipment] Fehler bei ${char.name}`);
       }
