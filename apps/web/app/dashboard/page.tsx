@@ -42,6 +42,15 @@ const classColors: Record<string, string> = {
   evoker: "text-teal-400",
 };
 
+interface DkpStanding {
+  current: number;
+}
+
+interface GuildMember {
+  id: string;
+  mPlusScore: number;
+}
+
 export default async function DashboardPage() {
   let player: Player | null = null;
   try {
@@ -49,6 +58,37 @@ export default async function DashboardPage() {
   } catch {}
 
   const guildId = player?.characters.find((c) => c.guild)?.guild?.id ?? null;
+
+  const guildChars = player?.characters.filter((c) => c.guild) ?? [];
+  const bestChar = player?.characters.reduce<Character | null>(
+    (best, c) => (c.mPlusScore > (best?.mPlusScore ?? 0) ? c : best),
+    null,
+  ) ?? null;
+
+  const [dkpResults, membersResult] = await Promise.all([
+    Promise.allSettled(
+      guildChars.map((c) =>
+        apiFetch<DkpStanding>(`/guilds/${c.guild!.id}/dkp/standings/${c.name}`),
+      ),
+    ),
+    guildId && bestChar && bestChar.mPlusScore > 0
+      ? apiFetch<GuildMember[]>(`/guilds/${guildId}/members`).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  const dkpTotal = dkpResults.reduce((sum, r) => {
+    if (r.status === "fulfilled") return sum + (r.value.current ?? 0);
+    return sum;
+  }, 0);
+
+  let mPlusRank: number | null = null;
+  if (membersResult && bestChar) {
+    const sorted = membersResult
+      .filter((m) => m.mPlusScore > 0)
+      .sort((a, b) => b.mPlusScore - a.mPlusScore);
+    const idx = sorted.findIndex((m) => m.id === bestChar.id);
+    if (idx !== -1) mPlusRank = idx + 1;
+  }
 
   return (
     <div>
@@ -77,6 +117,23 @@ export default async function DashboardPage() {
             </div>
 
             <DisplayNameTile current={player.displayName} />
+
+            {dkpTotal > 0 && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                <p className="text-zinc-500 text-xs uppercase tracking-wider">Deine DKP</p>
+                <p className="text-xl font-semibold mt-1">{dkpTotal}</p>
+              </div>
+            )}
+
+            {bestChar && bestChar.mPlusScore > 0 && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                <p className="text-zinc-500 text-xs uppercase tracking-wider">Bester M+ Score</p>
+                <p className="text-xl font-semibold mt-1">{bestChar.mPlusScore}</p>
+                {mPlusRank !== null && (
+                  <p className="text-zinc-500 text-sm mt-1">Platz #{mPlusRank} in der Gilde</p>
+                )}
+              </div>
+            )}
           </div>
 
           <div>
