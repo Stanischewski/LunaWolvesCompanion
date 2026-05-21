@@ -94,8 +94,12 @@ export async function syncEquipment(log: FastifyBaseLogger) {
 
   for (const player of activePlayers) {
     for (const char of player.characters) {
-      const realmSlug = char.realm.toLowerCase().replace(/ /g, "-");
-      const charName = encodeURIComponent(char.name.toLowerCase());
+      const realmSlug = char.realm
+        .toLowerCase()
+        .replace(/'/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+      const charName = char.name.toLowerCase();
 
       try {
         const res = await fetch(
@@ -104,7 +108,10 @@ export async function syncEquipment(log: FastifyBaseLogger) {
         );
 
         if (!res.ok) {
-          log.debug(`[Equipment] ${char.name}: HTTP ${res.status}`);
+          const errBody = await res.text().catch(() => "");
+          log.warn(
+            `[Equipment] ${char.name}-${char.realm} (${player.bnetTag}): HTTP ${res.status} — ${errBody.slice(0, 300)}`,
+          );
           continue;
         }
 
