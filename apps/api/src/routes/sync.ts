@@ -437,8 +437,17 @@ export async function syncRoutes(app: FastifyInstance) {
             }
           }
 
+          // Nur Standings für Charaktere berechnen, die in der characters-Tabelle bekannt sind.
+          // Unbekannte player_name-Einträge (z.B. falsch erkannte Spieler) werden ignoriert.
+          const guildChars = await tx
+            .select({ name: characters.name })
+            .from(characters)
+            .where(eq(characters.guildId, guild.id));
+          const knownNames = new Set(guildChars.map((c) => c.name));
+
           // Standings für alle betroffenen Spieler neu berechnen
           for (const playerName of dkpAffectedPlayers) {
+            if (!knownNames.has(playerName)) continue;
             const tombstone = tombstoneMap.get(playerName);
             const baseWhere = and(
               eq(dkpEntries.guildId, guild.id),

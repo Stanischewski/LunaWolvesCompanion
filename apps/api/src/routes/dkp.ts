@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.js";
-import { dkpEntries, dkpStandings, dkpTombstones, dkpSeasons } from "../db/schema.js";
+import { characters, dkpEntries, dkpStandings, dkpTombstones, dkpSeasons } from "../db/schema.js";
 
 export async function dkpRoutes(app: FastifyInstance) {
   // ── READ ──────────────────────────────────────────────────────────────────
@@ -89,6 +89,14 @@ export async function dkpRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "playerName und amount (> 0) erforderlich" });
       }
 
+      const knownChar = await db.query.characters.findFirst({
+        where: and(eq(characters.guildId, request.params.guildId), eq(characters.name, playerName)),
+        columns: { id: true },
+      });
+      if (!knownChar) {
+        return reply.status(400).send({ error: `Charakter '${playerName}' nicht bekannt — bitte zuerst mit dem Addon synchronisieren.` });
+      }
+
       const delta = Math.round(amount);
       const officerName: string = (request.user as { bnetTag: string }).bnetTag;
 
@@ -146,6 +154,14 @@ export async function dkpRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "playerName und amount (> 0) erforderlich" });
       }
 
+      const knownChar = await db.query.characters.findFirst({
+        where: and(eq(characters.guildId, request.params.guildId), eq(characters.name, playerName)),
+        columns: { id: true },
+      });
+      if (!knownChar) {
+        return reply.status(400).send({ error: `Charakter '${playerName}' nicht bekannt — bitte zuerst mit dem Addon synchronisieren.` });
+      }
+
       const delta = -Math.round(amount);
       const officerName: string = (request.user as { bnetTag: string }).bnetTag;
 
@@ -200,6 +216,14 @@ export async function dkpRoutes(app: FastifyInstance) {
       const { playerName, amount, reason = "Korrektur" } = request.body;
       if (!playerName || amount === undefined || amount === 0) {
         return reply.status(400).send({ error: "playerName und amount (ungleich 0) erforderlich" });
+      }
+
+      const knownChar = await db.query.characters.findFirst({
+        where: and(eq(characters.guildId, request.params.guildId), eq(characters.name, playerName)),
+        columns: { id: true },
+      });
+      if (!knownChar) {
+        return reply.status(400).send({ error: `Charakter '${playerName}' nicht bekannt — bitte zuerst mit dem Addon synchronisieren.` });
       }
 
       const delta = Math.round(amount);
