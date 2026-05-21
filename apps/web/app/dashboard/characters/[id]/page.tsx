@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { DungeonImage } from "./DungeonImage";
 import { apiFetch } from "@/lib/api";
 import { notFound } from "next/navigation";
 
@@ -16,6 +17,15 @@ interface RioRun {
 interface RioProfile {
   mythic_plus_scores_by_season: { season: string; scores: { all: number } }[];
   mythic_plus_best_runs: RioRun[];
+}
+
+interface RioStaticDungeon {
+  short_name: string;
+  background_image_url: string;
+}
+
+interface RioStaticData {
+  seasons: { dungeons: RioStaticDungeon[] }[];
 }
 
 interface EquipmentSlot {
@@ -101,12 +111,31 @@ export default async function CharacterPage({
   const char = await apiFetch<CharacterDetail>(`/characters/${id}`).catch(() => null);
   if (!char) notFound();
 
-  const rioProfile = await fetch(
-    `https://raider.io/api/v1/characters/profile?region=eu&realm=${encodeURIComponent(char.realm)}&name=${encodeURIComponent(char.name)}&fields=mythic_plus_scores_by_season:current,mythic_plus_best_runs`,
-    { next: { revalidate: 300 } },
-  )
-    .then((r) => (r.ok ? (r.json() as Promise<RioProfile>) : null))
-    .catch(() => null);
+  const [rioProfile, rioStatic] = await Promise.all([
+    fetch(
+      `https://raider.io/api/v1/characters/profile?region=eu&realm=${encodeURIComponent(char.realm)}&name=${encodeURIComponent(char.name)}&fields=mythic_plus_scores_by_season:current,mythic_plus_best_runs`,
+      { next: { revalidate: 300 } },
+    )
+      .then((r) => (r.ok ? (r.json() as Promise<RioProfile>) : null))
+      .catch(() => null),
+    fetch(
+      "https://raider.io/api/v1/mythic-plus/static-data?expansion_id=11",
+      { next: { revalidate: 86400 } },
+    )
+      .then((r) => (r.ok ? (r.json() as Promise<RioStaticData>) : null))
+      .catch(() => null),
+  ]);
+
+  const dungeonImages = new Map<string, string>();
+  if (rioStatic) {
+    for (const season of rioStatic.seasons) {
+      for (const dungeon of season.dungeons) {
+        if (!dungeonImages.has(dungeon.short_name)) {
+          dungeonImages.set(dungeon.short_name, dungeon.background_image_url);
+        }
+      }
+    }
+  }
 
   const rioScore =
     rioProfile?.mythic_plus_scores_by_season?.[0]?.scores?.all ?? null;
@@ -247,14 +276,19 @@ export default async function CharacterPage({
               return (
                 <div
                   key={run.dungeon}
-                  className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5"
+                  className="relative overflow-hidden bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5"
                 >
-                  <p className="text-zinc-500 text-xs truncate mb-0.5">{run.short_name}</p>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-lg font-bold">+{run.mythic_level}</span>
-                    <span className={`text-sm font-semibold ${timedColor}`}>{upgradeLabel}</span>
+                  {dungeonImages.has(run.short_name) && (
+                    <DungeonImage src={dungeonImages.get(run.short_name)!} />
+                  )}
+                  <div className="relative z-10">
+                    <p className="text-zinc-300 text-xs truncate mb-0.5 drop-shadow">{run.short_name}</p>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-lg font-bold drop-shadow">+{run.mythic_level}</span>
+                      <span className={`text-sm font-semibold drop-shadow ${timedColor}`}>{upgradeLabel}</span>
+                    </div>
+                    <p className="text-zinc-400 text-xs mt-0.5">{Math.round(run.score)} Pkt.</p>
                   </div>
-                  <p className="text-zinc-500 text-xs mt-0.5">{Math.round(run.score)} Pkt.</p>
                 </div>
               );
             })}
