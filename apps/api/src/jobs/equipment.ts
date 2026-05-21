@@ -95,6 +95,8 @@ export async function syncEquipment(log: FastifyBaseLogger) {
   for (const player of activePlayers) {
     for (const char of player.characters) {
       const realmSlug = char.realm
+        .replace(/([a-z\d])([A-Z])/g, "$1-$2")   // camelCase → kebab: "DasKonsortium" → "Das-Konsortium"
+        .replace(/([A-Z]+)([A-Z][a-z])/g, "$1-$2")
         .toLowerCase()
         .replace(/'/g, "")
         .replace(/[^a-z0-9]+/g, "-")
