@@ -30,9 +30,13 @@ export default async function DkpPage() {
 
   try {
     const guilds = await apiFetch<Guild[]>("/guilds");
-    if (guilds.length > 0) {
-      guild = guilds[0];
-      standings = await apiFetch<Standing[]>(`/guilds/${guild.id}/dkp/standings`);
+    for (const g of guilds) {
+      const s = await apiFetch<Standing[]>(`/guilds/${g.id}/dkp/standings`).catch(() => []);
+      if (s.length > 0) {
+        guild = g;
+        standings = s;
+        break;
+      }
     }
   } catch {}
 
