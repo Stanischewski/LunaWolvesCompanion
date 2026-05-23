@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { eq, and, desc, sql, gt, isNull } from "drizzle-orm";
+import { eq, and, desc, sql, gt, isNull, isNotNull } from "drizzle-orm";
 import { parseLua, LuaParseError } from "@guild/lua-parser";
 import type { LuaValue } from "@guild/lua-parser";
 import type { WowClass } from "@guild/shared-types";
@@ -23,6 +23,12 @@ import { guilds, characters, addonSnapshots, activityLogs, dkpEntries, dkpStandi
  *     },
  *   }
  */
+
+const MIN_ADDON_VERSION = 1;
+
+// Einfacher In-Memory-Cooldown pro Spieler (verhindert Sync-Spam)
+const syncCooldowns = new Map<string, number>();
+const SYNC_COOLDOWN_MS = 60_000;
 
 const DKP_TYPE_MAP: Record<string, "manual" | "boss" | "spend" | "correction"> = {
   MANUAL: "manual",
@@ -267,6 +273,20 @@ export async function syncRoutes(app: FastifyInstance) {
       }
       const roster = parsed.roster;
 
+      if (roster.version < MIN_ADDON_VERSION) {
+        return reply.status(400).send({
+          error: `Addon-Version ${roster.version} zu alt (Minimum: ${MIN_ADDON_VERSION}). Bitte Addon aktualisieren.`,
+        });
+      }
+
+      const nowMs = Date.now();
+      const lastSync = syncCooldowns.get(request.user.sub) ?? 0;
+      if (nowMs - lastSync < SYNC_COOLDOWN_MS) {
+        const waitSec = Math.ceil((SYNC_COOLDOWN_MS - (nowMs - lastSync)) / 1000);
+        return reply.status(429).send({ error: `Sync-Cooldown aktiv. Bitte ${waitSec}s warten.` });
+      }
+      syncCooldowns.set(request.user.sub, nowMs);
+
       const result = await db.transaction(async (tx) => {
         let guild = await tx.query.guilds.findFirst({
           where: and(
@@ -404,36 +424,47 @@ export async function syncRoutes(app: FastifyInstance) {
             activeTombstones.map((t) => [t.playerName, t.deletedAt]),
           );
 
-          // History-Einträge einfügen
+          // Bulk-Prefetch aller bereits bekannten Entry-IDs (1 Query statt N)
+          const knownEntryRows = await tx
+            .select({ addonEntryId: dkpEntries.addonEntryId })
+            .from(dkpEntries)
+            .where(and(eq(dkpEntries.guildId, guild.id), isNotNull(dkpEntries.addonEntryId)));
+          const knownEntryIds = new Set(knownEntryRows.map((r) => r.addonEntryId as string));
+
+          // Kandidaten filtern: bekannte, tombstoned und typunbekannte Einträge aussortieren
+          type MappedEntry = AddonDkpEntry & { mappedType: NonNullable<(typeof DKP_TYPE_MAP)[string]> };
+          const candidateEntries: MappedEntry[] = [];
           for (const entry of dkp.entries) {
-            const mappedType = DKP_TYPE_MAP[entry.type];
+            const mappedType = DKP_TYPE_MAP[entry.type.toUpperCase()];
             if (!mappedType) continue;
-
-            const occurredAt = new Date(entry.timestamp * 1000);
-
-            // Tombstone-Check: Eintrag überspringen wenn Spieler nach/zum Zeitpunkt gelöscht
+            if (knownEntryIds.has(entry.id)) continue;
             const tombstoneDate = tombstoneMap.get(entry.player);
-            if (tombstoneDate && tombstoneDate >= occurredAt) continue;
+            if (tombstoneDate && tombstoneDate >= new Date(entry.timestamp * 1000)) continue;
+            candidateEntries.push({ ...entry, mappedType });
+          }
 
-            const [inserted] = await tx
+          // Batch-Insert der neuen Einträge (1 Query statt N)
+          if (candidateEntries.length > 0) {
+            const insertedRows = await tx
               .insert(dkpEntries)
-              .values({
-                guildId: guild.id,
-                addonEntryId: entry.id,
-                playerName: entry.player,
-                delta: entry.delta,
-                reason: entry.reason,
-                entryType: mappedType,
-                officerName: entry.officer,
-                occurredAt,
-                source: "addon",
-              })
+              .values(
+                candidateEntries.map((entry) => ({
+                  guildId: guild.id,
+                  addonEntryId: entry.id,
+                  playerName: entry.player,
+                  delta: entry.delta,
+                  reason: entry.reason,
+                  entryType: entry.mappedType,
+                  officerName: entry.officer,
+                  occurredAt: new Date(entry.timestamp * 1000),
+                  source: "addon" as const,
+                })),
+              )
               .onConflictDoNothing()
-              .returning({ id: dkpEntries.id });
-
-            if (inserted) {
-              dkpEntriesInserted++;
-              dkpAffectedPlayers.add(entry.player);
+              .returning({ playerName: dkpEntries.playerName });
+            dkpEntriesInserted = insertedRows.length;
+            for (const row of insertedRows) {
+              dkpAffectedPlayers.add(row.playerName);
             }
           }
 
@@ -502,15 +533,22 @@ export async function syncRoutes(app: FastifyInstance) {
           charactersLinked++;
         }
 
+        const latestAddonEntryTimestamp = dkp
+          ? dkp.entries.reduce((max, e) => Math.max(max, e.timestamp), 0)
+          : 0;
+
         return {
           snapshotId: snapshot.id,
           guild,
           updated,
           created,
           dkpEntriesInserted,
+          dkpEntriesTotal: dkp?.entries.length ?? 0,
           dkpTombstonesInserted,
           dkpPlayersRecalculated: dkpAffectedPlayers.size,
           charactersLinked,
+          versionsChecked: versionEntries.length,
+          latestAddonEntryTimestamp,
         };
       });
 
@@ -562,9 +600,12 @@ export async function syncRoutes(app: FastifyInstance) {
         charactersCreated: result.created,
         charactersUpdated: result.updated,
         dkpEntriesInserted: result.dkpEntriesInserted,
+        dkpEntriesTotal: result.dkpEntriesTotal,
         dkpTombstonesInserted: result.dkpTombstonesInserted,
         dkpPlayersRecalculated: result.dkpPlayersRecalculated,
         charactersLinked: result.charactersLinked,
+        versionsChecked: result.versionsChecked,
+        latestAddonEntryTimestamp: result.latestAddonEntryTimestamp,
         pendingWebEntries,
       });
     },

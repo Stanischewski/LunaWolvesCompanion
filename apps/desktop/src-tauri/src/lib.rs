@@ -26,6 +26,10 @@ struct Config {
     api_url: String,
     token: String,
     saved_variables_path: String,
+    /// Unix-Timestamp des neuesten DKP-Eintrags aus dem letzten erfolgreichen Sync.
+    /// Wird vom Server zurückgegeben und hier gespeichert für spätere Optimierungen.
+    #[serde(default)]
+    last_synced_ts: u64,
 }
 
 /// Geteilter App-Zustand. Tauri haelt davon genau eine Instanz (`app.manage`);
@@ -124,8 +128,32 @@ fn upload_in_background(app: AppHandle, config: Config) {
         emit_status(&app, "running", "Synchronisiere …");
         match upload(&config) {
             Ok(body) => {
-                let pending_count = serde_json::from_str::<serde_json::Value>(&body)
-                    .ok()
+                let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
+
+                // Neuesten Entry-Timestamp aus der Response speichern
+                if let Some(ts) = parsed
+                    .as_ref()
+                    .and_then(|v| v["latestAddonEntryTimestamp"].as_u64())
+                    .filter(|&ts| ts > config.last_synced_ts)
+                {
+                    let state = app.state::<AppState>();
+                    let should_save = {
+                        let mut conf = state.config.lock().unwrap();
+                        if ts > conf.last_synced_ts {
+                            conf.last_synced_ts = ts;
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if should_save {
+                        let conf = state.config.lock().unwrap().clone();
+                        let _ = save_config_to_disk(&app, &conf);
+                    }
+                }
+
+                let pending_count = parsed
+                    .as_ref()
                     .and_then(|v| v["pendingWebEntries"].as_array().map(|a| a.len()))
                     .unwrap_or(0);
 
