@@ -1,43 +1,40 @@
-name: Desktop Release
+name: Release Desktop Agent
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [created]
 
 jobs:
-  build-windows:
+  build:
     runs-on: windows-latest
-    permissions:
-      contents: write
-
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: pnpm
+          node-version: '22'
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Monorepo-Dependencies installieren
+        run: pnpm install
 
-      - name: Build and publish
+      - name: App-Version auf Release-Tag setzen
+        shell: bash
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          jq ".version = \"$VERSION\"" apps/desktop/src-tauri/tauri.conf.json > tmp.json
+          mv tmp.json apps/desktop/src-tauri/tauri.conf.json
+
+      - name: Tauri-App bauen und Artifacts hochladen
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ github.ref_name }}
-          releaseDraft: false
-          prerelease: false
           projectPath: apps/desktop
-          tauriScript: pnpm tauri
+          releaseId: ${{ github.event.release.id }}
