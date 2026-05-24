@@ -7,6 +7,7 @@ const navItems = [
   { href: "/dashboard/dkp", label: "DKP" },
   { href: "/dashboard/stats", label: "Statistiken" },
   { href: "/dashboard/compare", label: "Vergleich" },
+  { href: "/dashboard/settings", label: "Einstellungen" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

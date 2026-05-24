@@ -64,6 +64,13 @@
       "when": 1779408000000,
       "tag": "0008_cleanup_dkp_standings",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1748131200000,
+      "tag": "0009_guild_settings",
+      "breakpoints": true
     }
   ]
 }

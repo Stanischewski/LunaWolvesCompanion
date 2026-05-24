@@ -12,6 +12,7 @@ import {
   dkpStandings,
   dkpTombstones,
   dkpSeasons,
+  guildSettings,
 } from "./schema.js";
 
 export const playersRelations = relations(players, ({ many }) => ({
@@ -19,7 +20,7 @@ export const playersRelations = relations(players, ({ many }) => ({
   addonSnapshots: many(addonSnapshots),
 }));
 
-export const guildsRelations = relations(guilds, ({ many }) => ({
+export const guildsRelations = relations(guilds, ({ many, one }) => ({
   characters: many(characters),
   raidEvents: many(raidEvents),
   addonSnapshots: many(addonSnapshots),
@@ -27,6 +28,11 @@ export const guildsRelations = relations(guilds, ({ many }) => ({
   dkpStandings: many(dkpStandings),
   dkpTombstones: many(dkpTombstones),
   dkpSeasons: many(dkpSeasons),
+  settings: one(guildSettings, { fields: [guilds.id], references: [guildSettings.guildId] }),
+}));
+
+export const guildSettingsRelations = relations(guildSettings, ({ one }) => ({
+  guild: one(guilds, { fields: [guildSettings.guildId], references: [guilds.id] }),
 }));
 
 export const charactersRelations = relations(characters, ({ one, many }) => ({
