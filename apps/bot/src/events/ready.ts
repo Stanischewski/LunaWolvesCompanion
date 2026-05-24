@@ -16,7 +16,7 @@ export const readyEvent = {
     });
     console.log(`✓ ${commands.size} Slash Commands registriert (Guild: ${config.guildId})`);
     console.log(`✓ Eingeloggt als ${client.user.tag}`);
-    loadClassEmojis(client);
+    await loadClassEmojis(client);
     startScheduler(client);
   },
 };

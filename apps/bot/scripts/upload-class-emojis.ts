@@ -1,10 +1,12 @@
 #!/usr/bin/env tsx
 /**
- * Lädt WoW-Klassen-Icons von der Blizzard API und erstellt sie als Discord Server-Emojis.
+ * Lädt WoW-Klassen-Icons von der Blizzard API und erstellt sie als
+ * Application-Emojis des Bots (bis 2.000, kein Server-Limit).
+ *
  * Einmalig ausführen mit: pnpm tsx scripts/upload-class-emojis.ts
  *
  * Voraussetzungen: apps/bot/.env mit BNET_CLIENT_ID, BNET_CLIENT_SECRET,
- *                  DISCORD_BOT_TOKEN, DISCORD_GUILD_ID
+ *                  DISCORD_BOT_TOKEN
  */
 
 import "dotenv/config";
@@ -12,15 +14,16 @@ import "dotenv/config";
 const BNET_CLIENT_ID = process.env.BNET_CLIENT_ID;
 const BNET_CLIENT_SECRET = process.env.BNET_CLIENT_SECRET;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
-const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
 const REGION = (process.env.BNET_REGION ?? "eu").toLowerCase();
 
-if (!BNET_CLIENT_ID || !BNET_CLIENT_SECRET || !DISCORD_BOT_TOKEN || !DISCORD_GUILD_ID) {
+if (!BNET_CLIENT_ID || !BNET_CLIENT_SECRET || !DISCORD_BOT_TOKEN) {
   console.error("❌ Fehlende Umgebungsvariablen. Prüfe apps/bot/.env");
   process.exit(1);
 }
 
-// WoW Klassen-IDs aus der Blizzard API
+// Application-ID aus dem Bot-Token ableiten (erster Segment = base64-kodierte User-ID)
+const APP_ID = Buffer.from(DISCORD_BOT_TOKEN.split(".")[0], "base64").toString("utf8");
+
 const CLASSES: Record<string, number> = {
   warrior: 1,
   paladin: 2,
@@ -47,7 +50,7 @@ async function getBnetToken(): Promise<string> {
     },
     body: "grant_type=client_credentials",
   });
-  if (!res.ok) throw new Error(`Battle.net Token fehlgeschlagen: ${res.status}`);
+  if (!res.ok) throw new Error(`Battle.net Token fehlgeschlagen: ${res.status} ${await res.text()}`);
   const data = (await res.json()) as { access_token: string };
   return data.access_token;
 }
@@ -55,7 +58,7 @@ async function getBnetToken(): Promise<string> {
 async function getClassIconUrl(token: string, classId: number): Promise<string> {
   const url = `https://${REGION}.api.blizzard.com/data/wow/media/playable-class/${classId}?namespace=static-${REGION}&locale=en_US`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`Blizzard API Fehler: ${res.status}`);
+  if (!res.ok) throw new Error(`Blizzard API: ${res.status}`);
   const data = (await res.json()) as { assets: Array<{ key: string; value: string }> };
   const icon = data.assets.find((a) => a.key === "icon");
   if (!icon) throw new Error("Kein Icon in API-Antwort");
@@ -65,21 +68,21 @@ async function getClassIconUrl(token: string, classId: number): Promise<string> 
 async function toBase64(url: string): Promise<string> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Download fehlgeschlagen: ${res.status}`);
-  const buf = await res.arrayBuffer();
-  return Buffer.from(buf).toString("base64");
+  return Buffer.from(await res.arrayBuffer()).toString("base64");
 }
 
-async function getExistingEmojiNames(): Promise<Set<string>> {
-  const res = await fetch(`https://discord.com/api/v10/guilds/${DISCORD_GUILD_ID}/emojis`, {
+// Application-Emojis des Bots abrufen (gibt { items: [...] } zurück, kein plain array)
+async function getExistingAppEmojiNames(): Promise<Set<string>> {
+  const res = await fetch(`https://discord.com/api/v10/applications/${APP_ID}/emojis`, {
     headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` },
   });
-  if (!res.ok) throw new Error(`Discord Emoji-Liste fehlgeschlagen: ${res.status}`);
-  const emojis = (await res.json()) as Array<{ name: string }>;
-  return new Set(emojis.map((e) => e.name));
+  if (!res.ok) throw new Error(`Discord Emoji-Liste: ${res.status} ${await res.text()}`);
+  const data = (await res.json()) as { items: Array<{ name: string }> };
+  return new Set(data.items.map((e) => e.name));
 }
 
-async function createEmoji(name: string, imageBase64: string): Promise<void> {
-  const res = await fetch(`https://discord.com/api/v10/guilds/${DISCORD_GUILD_ID}/emojis`, {
+async function createAppEmoji(name: string, imageBase64: string): Promise<void> {
+  const res = await fetch(`https://discord.com/api/v10/applications/${APP_ID}/emojis`, {
     method: "POST",
     headers: {
       Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
@@ -87,18 +90,18 @@ async function createEmoji(name: string, imageBase64: string): Promise<void> {
     },
     body: JSON.stringify({ name, image: `data:image/png;base64,${imageBase64}` }),
   });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`${res.status} — ${err}`);
-  }
+  if (!res.ok) throw new Error(`Discord: ${res.status} — ${await res.text()}`);
 }
 
 async function main() {
+  console.log(`Application-ID: ${APP_ID}`);
+
   console.log("🔑 Battle.net Token wird abgerufen...");
   const token = await getBnetToken();
 
-  console.log("📋 Vorhandene Discord-Emojis werden abgerufen...");
-  const existing = await getExistingEmojiNames();
+  console.log("📋 Vorhandene Application-Emojis werden abgerufen...");
+  const existing = await getExistingAppEmojiNames();
+  console.log(`   ${existing.size} Emojis bereits vorhanden`);
 
   let uploaded = 0;
   let skipped = 0;
@@ -107,7 +110,7 @@ async function main() {
     const emojiName = `class_${className}`;
 
     if (existing.has(emojiName)) {
-      console.log(`⏭  ${emojiName} bereits vorhanden, übersprungen`);
+      console.log(`⏭  ${emojiName} bereits vorhanden`);
       skipped++;
       continue;
     }
@@ -115,14 +118,13 @@ async function main() {
     try {
       const iconUrl = await getClassIconUrl(token, classId);
       const base64 = await toBase64(iconUrl);
-      await createEmoji(emojiName, base64);
+      await createAppEmoji(emojiName, base64);
       console.log(`✅ ${emojiName} hochgeladen`);
       uploaded++;
     } catch (err) {
       console.error(`❌ ${emojiName}: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Kurze Pause gegen Discord Rate-Limit
     await new Promise((r) => setTimeout(r, 600));
   }
 
