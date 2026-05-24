@@ -85,6 +85,20 @@
       "when": 1779667200000,
       "tag": "0011_raid_calendar_message",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1748131200001,
+      "tag": "0012_equipment_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1748131200002,
+      "tag": "0013_equipment_set_bonus",
+      "breakpoints": true
     }
   ]
 }

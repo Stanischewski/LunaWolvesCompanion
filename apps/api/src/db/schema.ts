@@ -125,6 +125,14 @@ export const characterEquipment = pgTable(
     itemLevel: integer("item_level").notNull().default(0),
     quality: varchar("quality", { length: 32 }),
     iconUrl: text("icon_url"),
+    itemSubclass: varchar("item_subclass", { length: 64 }),
+    stats: jsonb("stats").$type<Array<{ name: string; value: number }>>(),
+    enchantments: jsonb("enchantments").$type<string[]>(),
+    gems: jsonb("gems").$type<Array<{ name: string | null; stat: string | null }>>(),
+    setBonus: jsonb("set_bonus").$type<{
+      name: string;
+      effects: Array<{ count: number; text: string; active: boolean }>;
+    }>(),
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [unique("char_equipment_slot").on(t.characterId, t.slot)],
