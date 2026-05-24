@@ -39,7 +39,7 @@ async function doSignup(raidId: string, characterId: string, role: "tank" | "hea
 export async function botRoutes(app: FastifyInstance) {
   const guard = { onRequest: [requireBotSecret] };
 
-  // GET /bot/guilds/:guildId/settings — raidChannelId ohne Rollenprüfung
+  // GET /bot/guilds/:guildId/settings — raidChannelId + dkpChannelId ohne Rollenprüfung
   app.get<{ Params: { guildId: string } }>(
     "/bot/guilds/:guildId/settings",
     guard,
@@ -48,7 +48,25 @@ export async function botRoutes(app: FastifyInstance) {
       const settings = await db.query.guildSettings.findFirst({
         where: eq(guildSettings.guildId, guildId),
       });
-      return settings ?? { guildId, raidChannelId: null };
+      return settings ?? { guildId, raidChannelId: null, dkpChannelId: null, dkpMessageId: null };
+    },
+  );
+
+  // PATCH /bot/guilds/:guildId/dkp-message — DKP-Board-Nachrichten-ID speichern
+  app.patch<{ Params: { guildId: string }; Body: { dkpMessageId: string | null } }>(
+    "/bot/guilds/:guildId/dkp-message",
+    guard,
+    async (request) => {
+      const { guildId } = request.params;
+      const { dkpMessageId } = request.body;
+      await db
+        .insert(guildSettings)
+        .values({ guildId, dkpMessageId, adminRoleIds: [], editorRoleIds: [] })
+        .onConflictDoUpdate({
+          target: guildSettings.guildId,
+          set: { dkpMessageId, updatedAt: new Date() },
+        });
+      return { ok: true };
     },
   );
 

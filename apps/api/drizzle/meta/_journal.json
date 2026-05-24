@@ -99,6 +99,13 @@
       "when": 1748131200002,
       "tag": "0013_equipment_set_bonus",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1748131200003,
+      "tag": "0014_dkp_channel",
+      "breakpoints": true
     }
   ]
 }

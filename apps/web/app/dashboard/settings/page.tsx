@@ -9,6 +9,7 @@ interface Guild {
 interface GuildSettings {
   guildId: string;
   raidChannelId: string | null;
+  dkpChannelId: string | null;
   adminRoleIds: string[];
   editorRoleIds: string[];
 }
@@ -61,6 +62,7 @@ export default async function SettingsPage() {
   const initial = settings ?? {
     guildId: guild.id,
     raidChannelId: null,
+    dkpChannelId: null,
     adminRoleIds: [],
     editorRoleIds: [],
   };

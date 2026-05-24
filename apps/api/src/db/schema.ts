@@ -209,6 +209,8 @@ export const guildSettings = pgTable("guild_settings", {
   guildId: uuid("guild_id").notNull().unique().references(() => guilds.id, { onDelete: "cascade" }),
   raidChannelId: varchar("raid_channel_id", { length: 32 }),
   calendarMessageId: varchar("calendar_message_id", { length: 32 }),
+  dkpChannelId: varchar("dkp_channel_id", { length: 32 }),
+  dkpMessageId: varchar("dkp_message_id", { length: 32 }),
   adminRoleIds: jsonb("admin_role_ids").$type<string[]>().notNull().default([]),
   editorRoleIds: jsonb("editor_role_ids").$type<string[]>().notNull().default([]),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

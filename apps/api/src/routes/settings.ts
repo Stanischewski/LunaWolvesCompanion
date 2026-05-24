@@ -6,6 +6,7 @@ import { requireRole } from "../lib/permissions.js";
 
 interface SettingsBody {
   raidChannelId?: string | null;
+  dkpChannelId?: string | null;
   adminRoleIds?: string[];
   editorRoleIds?: string[];
 }
@@ -19,7 +20,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       const settings = await db.query.guildSettings.findFirst({
         where: eq(guildSettings.guildId, guildId),
       });
-      return settings ?? { guildId, raidChannelId: null, adminRoleIds: [], editorRoleIds: [] };
+      return settings ?? { guildId, raidChannelId: null, dkpChannelId: null, adminRoleIds: [], editorRoleIds: [] };
     },
   );
 
@@ -28,7 +29,7 @@ export async function settingsRoutes(app: FastifyInstance) {
     { onRequest: [requireRole("admin")] },
     async (request) => {
       const { guildId } = request.params;
-      const { raidChannelId, adminRoleIds, editorRoleIds } = request.body;
+      const { raidChannelId, dkpChannelId, adminRoleIds, editorRoleIds } = request.body;
 
       const existing = await db.query.guildSettings.findFirst({
         where: eq(guildSettings.guildId, guildId),
@@ -39,6 +40,7 @@ export async function settingsRoutes(app: FastifyInstance) {
           .update(guildSettings)
           .set({
             ...(raidChannelId !== undefined && { raidChannelId }),
+            ...(dkpChannelId !== undefined && { dkpChannelId }),
             ...(adminRoleIds !== undefined && { adminRoleIds }),
             ...(editorRoleIds !== undefined && { editorRoleIds }),
             updatedAt: new Date(),
@@ -53,6 +55,7 @@ export async function settingsRoutes(app: FastifyInstance) {
         .values({
           guildId,
           raidChannelId: raidChannelId ?? null,
+          dkpChannelId: dkpChannelId ?? null,
           adminRoleIds: adminRoleIds ?? [],
           editorRoleIds: editorRoleIds ?? [],
         })

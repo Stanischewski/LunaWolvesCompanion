@@ -164,6 +164,62 @@ export function dkpStandingsEmbed(standings: DkpStanding[]): EmbedBuilder {
     .setTimestamp();
 }
 
+export function dkpBoardEmbeds(
+  standings: DkpStanding[],
+  classMap?: Map<string, string>,
+): EmbedBuilder[] {
+  if (standings.length === 0) {
+    return [
+      new EmbedBuilder()
+        .setColor(GUILD_COLOR)
+        .setTitle("DKP")
+        .setDescription("Noch keine Einträge.")
+        .setTimestamp(),
+    ];
+  }
+
+  // Dynamisches Chunking: Feldgrenze 1024 Zeichen, Custom-Emojis sind ~38 Zeichen lang
+  const FIELD_LIMIT = 1020;
+  const embeds: EmbedBuilder[] = [];
+
+  let nameLines: string[] = [];
+  let dkpLines: string[] = [];
+  let namesLen = 0;
+  let isFirst = true;
+
+  const flush = () => {
+    if (nameLines.length === 0) return;
+    const embed = new EmbedBuilder()
+      .setColor(GUILD_COLOR)
+      .addFields(
+        { name: "Spieler", value: nameLines.join("\n"), inline: true },
+        { name: "DKP", value: dkpLines.join("\n"), inline: true },
+      );
+    if (isFirst) {
+      embed.setTitle("DKP").setFooter({ text: `${standings.length} Spieler` }).setTimestamp();
+      isFirst = false;
+    }
+    embeds.push(embed);
+    nameLines = [];
+    dkpLines = [];
+    namesLen = 0;
+  };
+
+  for (const s of standings) {
+    const cls = classMap?.get(s.playerName.toLowerCase());
+    const icon = cls ? classEmoji(cls) : "—";
+    const nameLine = `${icon}  ${s.playerName}`;
+    const lineLen = nameLine.length + 1; // +1 für \n
+    if (namesLen + lineLen > FIELD_LIMIT && nameLines.length > 0) flush();
+    nameLines.push(nameLine);
+    dkpLines.push(`${s.current}`);
+    namesLen += lineLen;
+  }
+  flush();
+
+  return embeds;
+}
+
 export function dkpPlayerEmbed(standing: DkpStanding): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(GUILD_COLOR)

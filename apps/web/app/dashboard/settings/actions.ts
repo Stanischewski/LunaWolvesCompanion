@@ -11,6 +11,7 @@ export async function saveSettings(
   formData: FormData,
 ): Promise<ActionState> {
   const raidChannelId = (formData.get("raidChannelId") as string)?.trim() || null;
+  const dkpChannelId = (formData.get("dkpChannelId") as string)?.trim() || null;
 
   const parseIds = (raw: string) =>
     raw
@@ -22,7 +23,7 @@ export async function saveSettings(
   const editorRoleIds = parseIds((formData.get("editorRoleIds") as string) ?? "");
 
   try {
-    await apiPut(`/guilds/${guildId}/settings`, { raidChannelId, adminRoleIds, editorRoleIds });
+    await apiPut(`/guilds/${guildId}/settings`, { raidChannelId, dkpChannelId, adminRoleIds, editorRoleIds });
     revalidatePath("/dashboard/settings");
     return { success: "Einstellungen gespeichert." };
   } catch (e) {

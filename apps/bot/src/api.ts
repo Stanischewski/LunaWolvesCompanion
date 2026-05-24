@@ -42,6 +42,8 @@ export interface RaidSignup {
 export interface BotSettings {
   guildId: string;
   raidChannelId: string | null;
+  dkpChannelId: string | null;
+  dkpMessageId: string | null;
 }
 
 export interface SignupBotResult {
@@ -89,6 +91,11 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   bot: {
     settings: () => apiFetch<BotSettings>(`/bot/guilds/${config.lunaGuildId}/settings`),
+    setDkpMessageId: (dkpMessageId: string | null) =>
+      apiFetch<{ ok: boolean }>(`/bot/guilds/${config.lunaGuildId}/dkp-message`, {
+        method: "PATCH",
+        body: JSON.stringify({ dkpMessageId }),
+      }),
   },
   guild: {
     get: () => apiFetch<GuildInfo>(`/guilds/${config.lunaGuildId}`),

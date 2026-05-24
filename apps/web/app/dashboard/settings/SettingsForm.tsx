@@ -5,6 +5,7 @@ import { saveSettings, type ActionState } from "./actions";
 
 interface GuildSettings {
   raidChannelId: string | null;
+  dkpChannelId: string | null;
   adminRoleIds: string[];
   editorRoleIds: string[];
 }
@@ -48,6 +49,22 @@ export function SettingsForm({ guildId, initial }: Props) {
           />
           <p className="text-xs text-zinc-600 mt-1">
             Rechtsklick auf den Channel → ID kopieren (Einstellungen → Erweitert → Entwicklermodus)
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm text-zinc-300 mb-1">
+            DKP-Liste Channel ID
+          </label>
+          <input
+            name="dkpChannelId"
+            type="text"
+            defaultValue={initial.dkpChannelId ?? ""}
+            placeholder="z.B. 123456789012345678"
+            className={inputCls()}
+          />
+          <p className="text-xs text-zinc-600 mt-1">
+            Der Bot postet hier alle 5 Minuten eine aktualisierte DKP-Übersicht aller Spieler.
           </p>
         </div>
       </section>
