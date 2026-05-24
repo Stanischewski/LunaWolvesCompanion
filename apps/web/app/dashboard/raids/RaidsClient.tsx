@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { createRaidAction, editRaidAction, signupRaidAction } from "./actions";
+import { ClassIcon } from "../components/ClassIcon";
 
 interface SignupCharacter {
   id: string;
@@ -69,7 +70,13 @@ function formatDate(iso: string) {
   });
 }
 
-function SignupSummary({ signups }: { signups: Signup[] }) {
+function SignupSummary({
+  signups,
+  classIcons = {},
+}: {
+  signups: Signup[];
+  classIcons?: Record<string, string>;
+}) {
   const confirmed = signups.filter((s) => s.status === "yes");
   const maybe = signups.filter((s) => s.status === "maybe");
 
@@ -122,8 +129,13 @@ function SignupSummary({ signups }: { signups: Signup[] }) {
                 {group.map((s) => (
                   <p
                     key={s.characterId}
-                    className={`text-xs font-medium ${classColors[s.character.class] ?? "text-zinc-200"}`}
+                    className={`text-xs font-medium flex items-center gap-1 ${classColors[s.character.class] ?? "text-zinc-200"}`}
                   >
+                    <ClassIcon
+                      className={s.character.class}
+                      iconUrl={classIcons[s.character.class]}
+                      size={14}
+                    />
                     {s.character.name}
                     {s.character.itemLevel > 0 && (
                       <span className="text-zinc-500 font-normal ml-1">
@@ -145,8 +157,13 @@ function SignupSummary({ signups }: { signups: Signup[] }) {
             {maybe.map((s) => (
               <span
                 key={s.characterId}
-                className={`text-xs ${classColors[s.character.class] ?? "text-zinc-400"}`}
+                className={`text-xs inline-flex items-center gap-1 ${classColors[s.character.class] ?? "text-zinc-400"}`}
               >
+                <ClassIcon
+                  className={s.character.class}
+                  iconUrl={classIcons[s.character.class]}
+                  size={13}
+                />
                 {s.character.name}
                 {s.character.itemLevel > 0 && (
                   <span className="text-zinc-600 ml-1">{s.character.itemLevel}</span>
@@ -489,10 +506,12 @@ function SignupPanel({
 function RaidRow({
   raid,
   myCharacters,
+  classIcons = {},
   isPast = false,
 }: {
   raid: RaidEvent;
   myCharacters: MyCharacter[];
+  classIcons?: Record<string, string>;
   isPast?: boolean;
 }) {
   const [showSignup, setShowSignup] = useState(false);
@@ -542,7 +561,7 @@ function RaidRow({
 
       {raid.signups.length > 0 && (
         <div className="border-t border-zinc-800 mt-3 pt-3">
-          <SignupSummary signups={raid.signups} />
+          <SignupSummary signups={raid.signups} classIcons={classIcons} />
         </div>
       )}
 
@@ -561,10 +580,12 @@ export function RaidsClient({
   guild,
   raids,
   myCharacters,
+  classIcons = {},
 }: {
   guild: { id: string; name: string; realm: string };
   raids: RaidEvent[];
   myCharacters: MyCharacter[];
+  classIcons?: Record<string, string>;
 }) {
   const [showCreate, setShowCreate] = useState(false);
   const now = new Date();
@@ -601,7 +622,7 @@ export function RaidsClient({
               </h2>
               <div className="space-y-2">
                 {upcoming.map((raid) => (
-                  <RaidRow key={raid.id} raid={raid} myCharacters={myCharacters} />
+                  <RaidRow key={raid.id} raid={raid} myCharacters={myCharacters} classIcons={classIcons} />
                 ))}
               </div>
             </section>
@@ -613,7 +634,7 @@ export function RaidsClient({
               </h2>
               <div className="space-y-2 opacity-60">
                 {past.map((raid) => (
-                  <RaidRow key={raid.id} raid={raid} myCharacters={myCharacters} isPast />
+                  <RaidRow key={raid.id} raid={raid} myCharacters={myCharacters} classIcons={classIcons} isPast />
                 ))}
               </div>
             </section>

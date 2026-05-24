@@ -13,6 +13,7 @@ import { syncRoutes } from "./routes/sync.js";
 import { dkpRoutes } from "./routes/dkp.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { botRoutes } from "./routes/bot.js";
+import { classIconRoutes } from "./routes/classIcons.js";
 import { setupSocketHandlers } from "./ws/socket.js";
 import { enrichMPlusScores } from "./jobs/raiderio.js";
 import { syncEquipment } from "./jobs/equipment.js";
@@ -82,6 +83,7 @@ await app.register(syncRoutes, { prefix: "/api/v1" });
 await app.register(dkpRoutes, { prefix: "/api/v1" });
 await app.register(settingsRoutes, { prefix: "/api/v1" });
 await app.register(botRoutes, { prefix: "/api/v1" });
+await app.register(classIconRoutes, { prefix: "/api/v1" });
 
 app.listen({ port: 3001, host: "0.0.0.0" }, (err, address) => {
   if (err) {

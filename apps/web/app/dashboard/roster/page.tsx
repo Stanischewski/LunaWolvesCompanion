@@ -5,6 +5,7 @@ import { RosterTable } from "./RosterTable";
 interface Member {
   id: string;
   name: string;
+  realm: string;
   class: string;
   level: number;
   itemLevel: number;
@@ -17,9 +18,13 @@ export default async function RosterPage() {
   const guild = await resolveGuild().catch(() => null);
   let members: Member[] = [];
 
-  if (guild) {
-    members = await apiFetch<Member[]>(`/guilds/${guild.id}/members`).catch(() => []);
-  }
+  const [membersResult, classIcons] = await Promise.all([
+    guild
+      ? apiFetch<Member[]>(`/guilds/${guild.id}/members`).catch(() => [] as Member[])
+      : Promise.resolve([] as Member[]),
+    apiFetch<Record<string, string>>("/class-icons").catch(() => ({} as Record<string, string>)),
+  ]);
+  members = membersResult;
 
   return (
     <div>
@@ -37,7 +42,7 @@ export default async function RosterPage() {
       ) : members.length === 0 ? (
         <p className="text-zinc-500">Keine Characters in der Gilde.</p>
       ) : (
-        <RosterTable members={members} />
+        <RosterTable members={members} classIcons={classIcons} />
       )}
     </div>
   );

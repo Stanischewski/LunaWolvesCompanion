@@ -37,6 +37,7 @@ export async function guildRoutes(app: FastifyInstance) {
       .select({
         id: characters.id,
         name: characters.name,
+        realm: characters.realm,
         class: characters.class,
         level: characters.level,
         itemLevel: characters.itemLevel,

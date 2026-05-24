@@ -147,10 +147,10 @@ export default async function CharacterPage({
     <div>
       <div className="mb-6">
         <Link
-          href="/dashboard"
+          href="/dashboard/roster"
           className="text-zinc-500 hover:text-zinc-300 text-sm transition-colors"
         >
-          ← Übersicht
+          ← Roster
         </Link>
       </div>
 

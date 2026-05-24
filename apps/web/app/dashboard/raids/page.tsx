@@ -30,14 +30,15 @@ export default async function RaidsPage() {
     );
   }
 
-  const [raids, playerData] = await Promise.all([
+  const [raids, playerData, classIcons] = await Promise.all([
     apiFetch<RaidEvent[]>(`/guilds/${guild.id}/raids`).catch(() => [] as RaidEvent[]),
     apiFetch<{ characters: MyCharacter[] }>("/players/me").catch(() => null),
+    apiFetch<Record<string, string>>("/class-icons").catch(() => ({} as Record<string, string>)),
   ]);
 
   const myCharacters = playerData?.characters ?? [];
 
   return (
-    <RaidsClient guild={guild} raids={raids} myCharacters={myCharacters} />
+    <RaidsClient guild={guild} raids={raids} myCharacters={myCharacters} classIcons={classIcons} />
   );
 }
