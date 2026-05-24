@@ -1,7 +1,8 @@
 import { SlashCommandBuilder } from "discord.js";
-import type { ChatInputCommandInteraction, AutocompleteInteraction } from "discord.js";
+import type { ChatInputCommandInteraction, AutocompleteInteraction, Client } from "discord.js";
 import { api } from "../api.js";
 import { raidListEmbed, raidRosterEmbed } from "../embeds.js";
+import { updateCalendarMessage } from "../calendar.js";
 import type { Command } from "./index.js";
 
 export const raidCommand: Command = {
@@ -99,6 +100,7 @@ export const raidCommand: Command = {
         await interaction.editReply({
           content: `✅ Raid **${raid.title}** erstellt!\nID: \`${raid.id}\``,
         });
+        updateCalendarMessage(interaction.client as Client<true>).catch(console.error);
       } else if (sub === "signup") {
         const raidId = interaction.options.getString("raid_id", true);
         const charName = interaction.options.getString("character", true);

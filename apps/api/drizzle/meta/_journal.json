@@ -71,6 +71,13 @@
       "when": 1748131200000,
       "tag": "0009_guild_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779580800000,
+      "tag": "0010_calendar_message",
+      "breakpoints": true
     }
   ]
 }

@@ -38,6 +38,18 @@ export interface RaidSignup {
   character?: MemberCharacter;
 }
 
+export interface BotSettings {
+  guildId: string;
+  raidChannelId: string | null;
+  calendarMessageId: string | null;
+}
+
+export interface SignupBotResult {
+  status: "signed_up" | "select_character" | "no_character";
+  character?: { id: string; name: string; class: string };
+  characters?: Array<{ id: string; name: string; class: string }>;
+}
+
 export interface DkpStanding {
   guildId: string;
   playerName: string;
@@ -75,6 +87,14 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  bot: {
+    settings: () => apiFetch<BotSettings>(`/bot/guilds/${config.lunaGuildId}/settings`),
+    setCalendarMessageId: (calendarMessageId: string | null) =>
+      apiFetch<BotSettings>(`/bot/guilds/${config.lunaGuildId}/calendar-message`, {
+        method: "PATCH",
+        body: JSON.stringify({ calendarMessageId }),
+      }),
+  },
   guild: {
     get: () => apiFetch<GuildInfo>(`/guilds/${config.lunaGuildId}`),
     members: () => apiFetch<MemberCharacter[]>(`/guilds/${config.lunaGuildId}/members`),
@@ -91,6 +111,21 @@ export const api = {
       apiFetch<RaidSignup>(`/raids/${id}/signup`, {
         method: "POST",
         body: JSON.stringify(body),
+      }),
+    signupBot: (id: string, body: { discordId: string; role: string }) =>
+      apiFetch<SignupBotResult>(`/bot/raids/${id}/signup`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    signupBotByChar: (id: string, body: { characterId: string; role: string }) =>
+      apiFetch<{ status: string }>(`/bot/raids/${id}/signup-by-char`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    unregisterBot: (id: string, discordId: string) =>
+      apiFetch<{ status: string }>(`/bot/raids/${id}/unregister`, {
+        method: "POST",
+        body: JSON.stringify({ discordId }),
       }),
   },
   dkp: {

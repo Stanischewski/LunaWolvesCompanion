@@ -1,5 +1,5 @@
 import { EmbedBuilder } from "discord.js";
-import type { GuildInfo, MemberCharacter, RaidEvent, DkpStanding, DkpEntry } from "./api.js";
+import type { GuildInfo, MemberCharacter, RaidEvent, RaidSignup, DkpStanding, DkpEntry } from "./api.js";
 
 export const GUILD_COLOR = 0x7c3aed;
 
@@ -248,6 +248,51 @@ export function compareEmbed(a: MemberCharacter, b: MemberCharacter): EmbedBuild
       },
     )
     .setFooter({ text: "✅ führt · ❌ liegt zurück · — gleich" })
+    .setTimestamp();
+}
+
+export function raidCalendarEmbed(raid: RaidEvent | undefined, isOngoing = false): EmbedBuilder {
+  if (!raid) {
+    return new EmbedBuilder()
+      .setColor(GUILD_COLOR)
+      .setTitle("📅 Raid-Kalender")
+      .setDescription("Aktuell sind keine Raids geplant.")
+      .setTimestamp();
+  }
+
+  const signups = raid.signups ?? [];
+  const tanks = signups.filter((s) => s.role === "tank" && s.status !== "no");
+  const heals = signups.filter((s) => s.role === "heal" && s.status !== "no");
+  const dps = signups.filter((s) => s.role === "dps" && s.status !== "no");
+  const maybe = signups.filter((s) => s.status === "maybe");
+
+  const fmt = (s: RaidSignup) =>
+    `${CLASS_EMOJI[s.character?.class ?? ""] ?? "❓"} ${s.character?.name ?? "?"}`;
+
+  const descLines = [
+    isOngoing ? "🟢 **Raid läuft gerade!**" : null,
+    `**Datum:** ${ts(raid.scheduledAt)} (${tsRel(raid.scheduledAt)})`,
+    raid.raidType ? `**Typ:** ${raid.raidType}` : null,
+    raid.minIlvl ? `**Min. Item-Level:** ${raid.minIlvl}` : null,
+  ].filter(Boolean) as string[];
+
+  return new EmbedBuilder()
+    .setColor(isOngoing ? 0x22c55e : GUILD_COLOR)
+    .setTitle(`📅 ${isOngoing ? "Laufender Raid" : "Nächster Raid"} — ${raid.title}`)
+    .setDescription(descLines.join("\n"))
+    .addFields(
+      { name: `🛡️ Tanks (${tanks.length})`, value: tanks.map(fmt).join("\n") || "—", inline: true },
+      { name: `💚 Heiler (${heals.length})`, value: heals.map(fmt).join("\n") || "—", inline: true },
+      { name: `⚔️ DPS (${dps.length})`, value: dps.map(fmt).join("\n") || "—", inline: true },
+      ...(maybe.length > 0
+        ? [{ name: `❓ Vielleicht (${maybe.length})`, value: maybe.map(fmt).join("\n") }]
+        : []),
+    )
+    .setFooter({
+      text: isOngoing
+        ? `${tanks.length + heals.length + dps.length} Angemeldete · Raid hat begonnen`
+        : `${tanks.length + heals.length + dps.length} Angemeldete · Schaltflächen unten zum An-/Abmelden`,
+    })
     .setTimestamp();
 }
 
