@@ -1,23 +1,8 @@
 import { EmbedBuilder } from "discord.js";
 import type { GuildInfo, MemberCharacter, RaidEvent, RaidSignup, DkpStanding, DkpEntry } from "./api.js";
+import { classEmoji } from "./emojis.js";
 
 export const GUILD_COLOR = 0x7c3aed;
-
-const CLASS_EMOJI: Record<string, string> = {
-  warrior: "⚔️",
-  paladin: "🛡️",
-  hunter: "🏹",
-  rogue: "🗡️",
-  priest: "✨",
-  shaman: "⚡",
-  mage: "❄️",
-  warlock: "🌑",
-  monk: "🥋",
-  druid: "🌿",
-  demon_hunter: "👁️",
-  death_knight: "☠️",
-  evoker: "🐉",
-};
 
 const CLASS_NAMES: Record<string, string> = {
   warrior: "Krieger",
@@ -61,7 +46,7 @@ export function guildStatusEmbed(guild: GuildInfo): EmbedBuilder {
 export function rosterEmbed(guild: GuildInfo, members: MemberCharacter[]): EmbedBuilder {
   const sorted = [...members].sort((a, b) => b.itemLevel - a.itemLevel);
   const lines = sorted.slice(0, 20).map((m, i) => {
-    const emoji = CLASS_EMOJI[m.class] ?? "❓";
+    const emoji = classEmoji(m.class);
     const cls = CLASS_NAMES[m.class] ?? m.class;
     return `\`${String(i + 1).padStart(2, " ")}\` ${emoji} **${m.name}** — ${cls}, ${m.itemLevel} ilvl`;
   });
@@ -81,7 +66,7 @@ export function activityEmbed(guild: GuildInfo, members: MemberCharacter[]): Emb
     .sort((a, b) => new Date(b.lastLogin).getTime() - new Date(a.lastLogin).getTime())
     .slice(0, 15);
   const lines = recent.map((m) => {
-    const emoji = CLASS_EMOJI[m.class] ?? "❓";
+    const emoji = classEmoji(m.class);
     return `${emoji} **${m.name}** — zuletzt ${tsRel(m.lastLogin)}`;
   });
   return new EmbedBuilder()
@@ -92,7 +77,7 @@ export function activityEmbed(guild: GuildInfo, members: MemberCharacter[]): Emb
 }
 
 export function playerEmbed(member: MemberCharacter): EmbedBuilder {
-  const emoji = CLASS_EMOJI[member.class] ?? "❓";
+  const emoji = classEmoji(member.class);
   const cls = CLASS_NAMES[member.class] ?? member.class;
   return new EmbedBuilder()
     .setColor(GUILD_COLOR)
@@ -151,7 +136,7 @@ export function inactivityReportEmbed(members: MemberCharacter[]): EmbedBuilder 
   }
   const lines = members.map((m) => {
     const last = m.lastLogin ? tsRel(m.lastLogin) : "Nie eingeloggt";
-    const emoji = CLASS_EMOJI[m.class] ?? "❓";
+    const emoji = classEmoji(m.class);
     return `${emoji} **${m.name}** — ${last}`;
   });
   return new EmbedBuilder()
@@ -205,8 +190,8 @@ export function dkpHistoryEmbed(entries: DkpEntry[], playerFilter?: string): Emb
 }
 
 export function compareEmbed(a: MemberCharacter, b: MemberCharacter): EmbedBuilder {
-  const emojiA = CLASS_EMOJI[a.class] ?? "❓";
-  const emojiB = CLASS_EMOJI[b.class] ?? "❓";
+  const emojiA = classEmoji(a.class);
+  const emojiB = classEmoji(b.class);
   const clsA = CLASS_NAMES[a.class] ?? a.class;
   const clsB = CLASS_NAMES[b.class] ?? b.class;
 
@@ -267,7 +252,7 @@ export function raidCalendarEmbed(raid: RaidEvent | undefined, isOngoing = false
   const maybe = signups.filter((s) => s.status === "maybe");
 
   const fmt = (s: RaidSignup) =>
-    `${CLASS_EMOJI[s.character?.class ?? ""] ?? "❓"} ${s.character?.name ?? "?"}`;
+    `${classEmoji(s.character?.class ?? "")} ${s.character?.name ?? "?"}`;
 
   const descLines = [
     isOngoing ? "🟢 **Raid läuft gerade!**" : null,

@@ -94,6 +94,7 @@ export const raidEvents = pgTable("raid_events", {
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
   raidType: varchar("raid_type", { length: 64 }),
   minIlvl: integer("min_ilvl"),
+  calendarMessageId: varchar("calendar_message_id", { length: 32 }),
 });
 
 export const raidSignups = pgTable(

@@ -27,6 +27,7 @@ export interface RaidEvent {
   scheduledAt: string;
   raidType?: string;
   minIlvl?: number;
+  calendarMessageId?: string | null;
   signups?: RaidSignup[];
 }
 
@@ -41,7 +42,6 @@ export interface RaidSignup {
 export interface BotSettings {
   guildId: string;
   raidChannelId: string | null;
-  calendarMessageId: string | null;
 }
 
 export interface SignupBotResult {
@@ -89,11 +89,6 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   bot: {
     settings: () => apiFetch<BotSettings>(`/bot/guilds/${config.lunaGuildId}/settings`),
-    setCalendarMessageId: (calendarMessageId: string | null) =>
-      apiFetch<BotSettings>(`/bot/guilds/${config.lunaGuildId}/calendar-message`, {
-        method: "PATCH",
-        body: JSON.stringify({ calendarMessageId }),
-      }),
   },
   guild: {
     get: () => apiFetch<GuildInfo>(`/guilds/${config.lunaGuildId}`),
@@ -126,6 +121,11 @@ export const api = {
       apiFetch<{ status: string }>(`/bot/raids/${id}/unregister`, {
         method: "POST",
         body: JSON.stringify({ discordId }),
+      }),
+    setCalendarMessageId: (id: string, calendarMessageId: string | null) =>
+      apiFetch<RaidEvent>(`/bot/raids/${id}/calendar-message`, {
+        method: "PATCH",
+        body: JSON.stringify({ calendarMessageId }),
       }),
   },
   dkp: {

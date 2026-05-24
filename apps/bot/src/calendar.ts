@@ -5,27 +5,21 @@ import { config } from "./config.js";
 import { raidCalendarEmbed } from "./embeds.js";
 import type { RaidEvent } from "./api.js";
 
-const ROLE_LABELS: Record<string, string> = {
-  tank: "Tank",
-  heal: "Heiler",
-  dps: "DPS",
-};
-
 function buildButtons(raidId: string): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`cal_signup:tank:${raidId}`)
-      .setLabel(ROLE_LABELS.tank)
+      .setLabel("Tank")
       .setEmoji("🛡️")
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId(`cal_signup:heal:${raidId}`)
-      .setLabel(ROLE_LABELS.heal)
+      .setLabel("Heiler")
       .setEmoji("💚")
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`cal_signup:dps:${raidId}`)
-      .setLabel(ROLE_LABELS.dps)
+      .setLabel("DPS")
       .setEmoji("⚔️")
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
@@ -53,30 +47,33 @@ export async function updateCalendarMessage(client: Client<true>): Promise<void>
     const raids = await api.guild.raids();
     const now = new Date();
     const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
-    // Zeige das nächste geplante Raid, oder einen Raid der in den letzten 6h gestartet ist
     const nextRaid: RaidEvent | undefined = raids.find(
       (r) => new Date(r.scheduledAt) > sixHoursAgo,
     );
-    const isOngoing = nextRaid !== undefined && new Date(nextRaid.scheduledAt) <= now;
 
+    // Kein aktuelles/bevorstehendes Raid — nichts tun, alte Nachricht bleibt stehen
+    if (!nextRaid) return;
+
+    const isOngoing = new Date(nextRaid.scheduledAt) <= now;
     const embed = raidCalendarEmbed(nextRaid, isOngoing);
-    // Bei laufenden Raids keine Anmelde-Buttons mehr anzeigen
-    const components = nextRaid && !isOngoing ? [buildButtons(nextRaid.id)] : [];
+    // Während des Raids keine Anmelde-Buttons
+    const components = isOngoing ? [] : [buildButtons(nextRaid.id)];
 
-    let msgId = settings.calendarMessageId;
-
-    if (msgId) {
+    // Vorhandene Nachricht dieses Raids bearbeiten
+    if (nextRaid.calendarMessageId) {
       try {
-        const msg = await channel.messages.fetch(msgId);
+        const msg = await channel.messages.fetch(nextRaid.calendarMessageId);
         await msg.edit({ embeds: [embed], components });
         return;
       } catch {
-        msgId = null;
+        // Nachricht wurde gelöscht → neue posten
+        await api.raid.setCalendarMessageId(nextRaid.id, null);
       }
     }
 
+    // Neue Nachricht für diesen Raid posten
     const msg = await channel.send({ embeds: [embed], components });
-    await api.bot.setCalendarMessageId(msg.id);
+    await api.raid.setCalendarMessageId(nextRaid.id, msg.id);
   } catch (err) {
     console.error("[Calendar] Fehler beim Aktualisieren:", err);
   }

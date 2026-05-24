@@ -39,7 +39,7 @@ async function doSignup(raidId: string, characterId: string, role: "tank" | "hea
 export async function botRoutes(app: FastifyInstance) {
   const guard = { onRequest: [requireBotSecret] };
 
-  // GET /bot/guilds/:guildId/settings — raidChannelId + calendarMessageId ohne Rollenprüfung
+  // GET /bot/guilds/:guildId/settings — raidChannelId ohne Rollenprüfung
   app.get<{ Params: { guildId: string } }>(
     "/bot/guilds/:guildId/settings",
     guard,
@@ -48,33 +48,24 @@ export async function botRoutes(app: FastifyInstance) {
       const settings = await db.query.guildSettings.findFirst({
         where: eq(guildSettings.guildId, guildId),
       });
-      return settings ?? { guildId, raidChannelId: null, calendarMessageId: null };
+      return settings ?? { guildId, raidChannelId: null };
     },
   );
 
-  // PATCH /bot/guilds/:guildId/calendar-message — speichert die Discord-Nachrichten-ID
-  app.patch<{ Params: { guildId: string }; Body: { calendarMessageId: string | null } }>(
-    "/bot/guilds/:guildId/calendar-message",
+  // PATCH /bot/raids/:raidId/calendar-message — Discord-Nachrichten-ID pro Raid speichern
+  app.patch<{ Params: { raidId: string }; Body: { calendarMessageId: string | null } }>(
+    "/bot/raids/:raidId/calendar-message",
     guard,
-    async (request) => {
-      const { guildId } = request.params;
+    async (request, reply) => {
+      const { raidId } = request.params;
       const { calendarMessageId } = request.body;
-      const existing = await db.query.guildSettings.findFirst({
-        where: eq(guildSettings.guildId, guildId),
-      });
-      if (existing) {
-        const [updated] = await db
-          .update(guildSettings)
-          .set({ calendarMessageId, updatedAt: new Date() })
-          .where(eq(guildSettings.guildId, guildId))
-          .returning();
-        return updated;
-      }
-      const [created] = await db
-        .insert(guildSettings)
-        .values({ guildId, calendarMessageId })
+      const [updated] = await db
+        .update(raidEvents)
+        .set({ calendarMessageId })
+        .where(eq(raidEvents.id, raidId))
         .returning();
-      return created;
+      if (!updated) return reply.status(404).send({ error: "Raid nicht gefunden" });
+      return updated;
     },
   );
 
