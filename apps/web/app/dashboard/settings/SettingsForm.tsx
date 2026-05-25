@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { saveSettings, type ActionState } from "./actions";
+import { saveSettings, setPrimaryGuild, type ActionState } from "./actions";
+import type { Guild } from "@/lib/guild";
 
 interface GuildSettings {
   raidChannelId: string | null;
@@ -13,6 +14,7 @@ interface GuildSettings {
 interface Props {
   guildId: string;
   initial: GuildSettings;
+  allGuilds: Guild[];
 }
 
 function inputCls() {
@@ -23,14 +25,65 @@ function textareaCls() {
   return `${inputCls()} font-mono resize-none`;
 }
 
-export function SettingsForm({ guildId, initial }: Props) {
+function GuildSelector({ allGuilds }: { allGuilds: Guild[] }) {
+  const [state, dispatch, pending] = useActionState<ActionState, FormData>(setPrimaryGuild, null);
+  if (allGuilds.length <= 1) return null;
+  return (
+    <form action={dispatch} className="space-y-3">
+      <div className="space-y-2">
+        {allGuilds.map((g) => (
+          <label key={g.id} className="flex items-center gap-3 cursor-pointer group">
+            <input
+              type="radio"
+              name="guildId"
+              value={g.id}
+              defaultChecked={g.isPrimary}
+              className="accent-blue-500"
+            />
+            <span className="text-sm text-zinc-200 group-hover:text-zinc-100">
+              {g.name}
+              <span className="text-zinc-500 ml-1 text-xs">{g.realm}</span>
+            </span>
+            {g.isPrimary && (
+              <span className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded px-1.5 py-0.5">
+                aktiv
+              </span>
+            )}
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={pending}
+          className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors"
+        >
+          {pending ? "Setze..." : "Als primäre Gilde setzen"}
+        </button>
+        {state?.success && <span className="text-sm text-green-400">{state.success}</span>}
+        {state?.error && <span className="text-sm text-red-400">{state.error}</span>}
+      </div>
+    </form>
+  );
+}
+
+export function SettingsForm({ guildId, initial, allGuilds }: Props) {
   const [state, dispatch, pending] = useActionState<ActionState, FormData>(
     saveSettings.bind(null, guildId),
     null,
   );
 
   return (
-    <form action={dispatch} className="space-y-6 max-w-xl">
+    <div className="space-y-6 max-w-xl">
+      {allGuilds.length > 1 && (
+        <section className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
+            Aktive Gilde
+          </h2>
+          <GuildSelector allGuilds={allGuilds} />
+        </section>
+      )}
+    <form action={dispatch} className="contents">
       <section className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
         <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
           Discord-Kanäle
@@ -126,5 +179,6 @@ export function SettingsForm({ guildId, initial }: Props) {
         )}
       </div>
     </form>
+    </div>
   );
 }

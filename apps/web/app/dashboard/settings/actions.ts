@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { apiPut } from "@/lib/api";
+import { apiPost, apiPut } from "@/lib/api";
 
 export type ActionState = { error?: string; success?: string } | null;
 
@@ -26,6 +26,18 @@ export async function saveSettings(
     await apiPut(`/guilds/${guildId}/settings`, { raidChannelId, dkpChannelId, adminRoleIds, editorRoleIds });
     revalidatePath("/dashboard/settings");
     return { success: "Einstellungen gespeichert." };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+export async function setPrimaryGuild(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const guildId = formData.get("guildId") as string;
+  if (!guildId) return { error: "Keine Gilde ausgewählt." };
+  try {
+    await apiPost(`/guilds/${guildId}/set-primary`, {});
+    revalidatePath("/dashboard/settings");
+    return { success: "Primäre Gilde gesetzt." };
   } catch (e) {
     return { error: (e as Error).message };
   }

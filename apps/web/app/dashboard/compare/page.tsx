@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api";
+import { resolveGuild } from "@/lib/guild";
 
 interface Guild {
   id: string;
@@ -82,9 +83,9 @@ export default async function ComparePage({
   let allMembers: Member[] = [];
 
   try {
-    const guilds = await apiFetch<Guild[]>("/guilds");
-    if (guilds.length > 0) {
-      allMembers = await apiFetch<Member[]>(`/guilds/${guilds[0].id}/members`);
+    const guild = await resolveGuild();
+    if (guild) {
+      allMembers = await apiFetch<Member[]>(`/guilds/${guild.id}/members`);
       if (nameA) memberA = allMembers.find((m) => m.name.toLowerCase() === nameA.toLowerCase()) ?? null;
       if (nameB) memberB = allMembers.find((m) => m.name.toLowerCase() === nameB.toLowerCase()) ?? null;
     }

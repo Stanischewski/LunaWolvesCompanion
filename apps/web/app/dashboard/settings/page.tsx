@@ -1,10 +1,6 @@
 import { apiFetch } from "@/lib/api";
 import { SettingsForm } from "./SettingsForm";
-
-interface Guild {
-  id: string;
-  name: string;
-}
+import type { Guild } from "@/lib/guild";
 
 interface GuildSettings {
   guildId: string;
@@ -15,18 +11,19 @@ interface GuildSettings {
 }
 
 export default async function SettingsPage() {
-  let guild: Guild | null = null;
+  let allGuilds: Guild[] = [];
+  let primaryGuild: Guild | null = null;
   let settings: GuildSettings | null = null;
   let forbidden = false;
 
   try {
-    const guilds = await apiFetch<Guild[]>("/guilds");
-    if (guilds.length > 0) guild = guilds[0];
+    allGuilds = await apiFetch<Guild[]>("/guilds");
+    primaryGuild = allGuilds.find((g) => g.isPrimary) ?? allGuilds[0] ?? null;
   } catch {}
 
-  if (guild) {
+  if (primaryGuild) {
     try {
-      settings = await apiFetch<GuildSettings>(`/guilds/${guild.id}/settings`);
+      settings = await apiFetch<GuildSettings>(`/guilds/${primaryGuild.id}/settings`);
     } catch (e) {
       if ((e as Error).message.includes("403")) {
         forbidden = true;
@@ -50,7 +47,7 @@ export default async function SettingsPage() {
     );
   }
 
-  if (!guild) {
+  if (!primaryGuild) {
     return (
       <div>
         <h1 className="text-2xl font-bold mb-6">Einstellungen</h1>
@@ -60,7 +57,7 @@ export default async function SettingsPage() {
   }
 
   const initial = settings ?? {
-    guildId: guild.id,
+    guildId: primaryGuild.id,
     raidChannelId: null,
     dkpChannelId: null,
     adminRoleIds: [],
@@ -71,10 +68,10 @@ export default async function SettingsPage() {
     <div>
       <div className="flex items-baseline gap-3 mb-6">
         <h1 className="text-2xl font-bold">Einstellungen</h1>
-        <span className="text-zinc-500 text-sm">{guild.name}</span>
+        <span className="text-zinc-500 text-sm">{primaryGuild.name}</span>
       </div>
 
-      <SettingsForm guildId={guild.id} initial={initial} />
+      <SettingsForm guildId={primaryGuild.id} initial={initial} allGuilds={allGuilds} />
     </div>
   );
 }

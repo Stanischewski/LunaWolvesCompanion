@@ -50,7 +50,9 @@ export function requireRole(role: "admin" | "editor") {
       return reply.status(403).send({ error: "Discord-Konto muss verknüpft sein" });
     }
 
-    const guild = await db.query.guilds.findFirst();
+    const guild =
+      (await db.query.guilds.findFirst({ where: eq(guilds.isPrimary, true) })) ??
+      (await db.query.guilds.findFirst());
     if (!guild) return reply.status(403).send({ error: "Keine Gilde konfiguriert" });
 
     const settings = await db.query.guildSettings.findFirst({

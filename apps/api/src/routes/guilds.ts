@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/index.js";
 import { guilds, characters, activityLogs, players } from "../db/schema.js";
-import { eq, and, gt, gte, count, sql } from "drizzle-orm";
+import { eq, and, gt, gte, count, sql, ne } from "drizzle-orm";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -16,6 +16,24 @@ export async function guildRoutes(app: FastifyInstance) {
     const [guild] = await db.insert(guilds).values(request.body).returning();
     return reply.status(201).send(guild);
   });
+
+  app.post<{ Params: { id: string } }>(
+    "/guilds/:id/set-primary",
+    { onRequest: [app.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params;
+      if (!UUID_RE.test(id)) return reply.status(400).send({ error: "Ungültige ID" });
+      // Alle Gilden zurücksetzen, dann diese als primär markieren
+      await db.update(guilds).set({ isPrimary: false }).where(ne(guilds.id, id));
+      const [updated] = await db
+        .update(guilds)
+        .set({ isPrimary: true })
+        .where(eq(guilds.id, id))
+        .returning();
+      if (!updated) return reply.status(404).send({ error: "Gilde nicht gefunden" });
+      return updated;
+    },
+  );
 
   app.get<{ Params: { id: string } }>("/guilds/:id", async (request, reply) => {
     if (!UUID_RE.test(request.params.id)) return reply.status(400).send({ error: "Ungültige ID" });

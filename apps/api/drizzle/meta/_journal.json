@@ -106,6 +106,13 @@
       "when": 1748131200003,
       "tag": "0014_dkp_channel",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1748217600000,
+      "tag": "0015_guild_primary",
+      "breakpoints": true
     }
   ]
 }

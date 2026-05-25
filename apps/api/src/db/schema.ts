@@ -5,6 +5,7 @@ import {
   varchar,
   text,
   integer,
+  boolean,
   timestamp,
   jsonb,
   primaryKey,
@@ -42,6 +43,7 @@ export const guilds = pgTable("guilds", {
   realm: varchar("realm", { length: 64 }).notNull(),
   faction: factionEnum("faction").notNull(),
   memberCount: integer("member_count").notNull().default(0),
+  isPrimary: boolean("is_primary").notNull().default(false),
 });
 
 export const characters = pgTable("characters", {
