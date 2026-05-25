@@ -122,6 +122,16 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
   exit 0
 fi
 
+# --- Schritt 7.5: DB-Migrationen (nur API) ----------------------------------
+# Nur die API besitzt das Schema. drizzle-kit migrate ist idempotent und wendet
+# nur noch nicht eingespielte Migrationen an (Tracking via drizzle.__drizzle_migrations).
+# Voraussetzung: einmaliger Baseline-Schritt auf einer manuell migrierten DB
+# (siehe deploy/lxc/baseline_migrations.sql), sonst versucht migrate alles ab 0000.
+if [[ "$APP" == "api" ]]; then
+  step "Datenbank-Migrationen anwenden ..."
+  ( cd "$APP_DIR" && pnpm db:migrate )
+fi
+
 # --- Schritt 8: PM2 starten & autostart einrichten --------------------------
 
 step "PM2 starten/neu laden ..."
