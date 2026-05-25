@@ -124,8 +124,10 @@ fi
 
 # --- Schritt 8: PM2 starten & autostart einrichten --------------------------
 
-step "PM2 starten ..."
-pm2 start "$APP_DIR/ecosystem.config.cjs" --update-env
+step "PM2 starten/neu laden ..."
+# startOrReload statt start: bei bereits laufender App ist `pm2 start` ein No-Op
+# und übernimmt den frisch gebauten Code NICHT — startOrReload lädt ihn zuverlässig neu.
+pm2 startOrReload "$APP_DIR/ecosystem.config.cjs" --update-env
 
 step "PM2 Autostart beim Systemstart einrichten ..."
 pm2 save
