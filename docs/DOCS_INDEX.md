@@ -20,3 +20,10 @@
 |--------------------|------|
 | Deutsch | [de/Addon_DKP_Integrationsplan.md](de/Addon_DKP_Integrationsplan.md) |
 | English | — (coming soon) |
+
+## SIMC Integration
+
+| Sprache / Language | Link |
+|--------------------|------|
+| Deutsch | [de/SIMC_Integrationsplan.md](de/SIMC_Integrationsplan.md) |
+| English | — (coming soon) |
