@@ -11,7 +11,7 @@ Geprüft wurden beide Repositories vollständig:
 
 **Verifikationsgrad:** Befunde mit ✅ wurden ausgeführt und reproduziert. Befunde mit 🔍 sind aus dem Code abgeleitet und hoch wahrscheinlich, aber nicht zur Laufzeit gegengeprüft (kein Live-Server, keine WoW-Instanz).
 
-**Stand der Umsetzung:** Die Sofort-Stufe ([A1](#a1), [A5](#a5), [B1](#b1), [C6](#c6)) ist umgesetzt und gegen eine echte PostgreSQL-Instanz verifiziert — siehe [Abschnitt E](#e-umgesetzt). Alles Übrige ist offen.
+**Stand der Umsetzung:** Sofort-Stufe ([A1](#a1), [A5](#a5), [B1](#b1), [C6](#c6)) und kurzfristige Stufe ([A2](#a2)–[A4](#a4), [A6](#a6), [B4](#b4)–[B6](#b6)) sind umgesetzt und verifiziert — siehe [Abschnitt E](#e-umgesetzt). Offen sind noch [A7](#a7)–[A10](#a10), [B2](#b2)/[B3](#b3) (Season-Modell), [B7](#b7)–[B15](#b15) und [C1](#c1)–[C5](#c5), [C7](#c7).
 
 ---
 
@@ -47,7 +47,7 @@ app.post(".../dkp/reset",  { onRequest: [app.authenticate] }, ...)
 
 ---
 
-### <a id="a2"></a>A2 — Raid-Endpunkte ohne Rollen- und Eigentumsprüfung 🔍 · **hoch**
+### <a id="a2"></a>A2 — Raid-Endpunkte ohne Rollen- und Eigentumsprüfung 🔍 · **hoch** · ✔ BEHOBEN
 
 `apps/api/src/routes/raids.ts:28,56,78,131`
 
@@ -60,7 +60,7 @@ Zwei getrennte Probleme:
 
 ---
 
-### <a id="a3"></a>A3 — Mass Assignment bei Gilden + primäre Gilde ungeschützt 🔍 · **hoch**
+### <a id="a3"></a>A3 — Mass Assignment bei Gilden + primäre Gilde ungeschützt 🔍 · **hoch** · ✔ BEHOBEN
 
 `apps/api/src/routes/guilds.ts:15,22`
 
@@ -77,7 +77,7 @@ Das ist mehr als Kosmetik: `requireRole()` in `lib/permissions.ts:56-58` löst d
 
 ---
 
-### <a id="a4"></a>A4 — Mass Assignment bei Charakteren, DKP-Identitätsfälschung 🔍 · **hoch**
+### <a id="a4"></a>A4 — Mass Assignment bei Charakteren, DKP-Identitätsfälschung 🔍 · **hoch** · ✔ BEHOBEN
 
 `apps/api/src/routes/characters.ts:39,59`
 
@@ -109,7 +109,7 @@ function isOfficer(interaction) {
 
 ---
 
-### <a id="a6"></a>A6 — Unauthentifizierte Endpunkte geben Gildendaten preis 🔍 · **mittel**
+### <a id="a6"></a>A6 — Unauthentifizierte Endpunkte geben Gildendaten preis 🔍 · **mittel** · ✔ BEHOBEN
 
 | Endpunkt | Datei | Preisgegeben |
 |----------|-------|--------------|
@@ -260,7 +260,7 @@ Der Officer, der den Reset verpasst hat, spielt damit die gesamte alte Season wi
 
 ---
 
-### <a id="b4"></a>B4 — Entry-ID-Kollisionen lassen Bosskill-Awards verschwinden 🔍 · **hoch**
+### <a id="b4"></a>B4 — Entry-ID-Kollisionen lassen Bosskill-Awards verschwinden 🔍 · **hoch** · ✔ BEHOBEN
 
 `LunaWolves/Modules/DKP.lua:104-106` und `238-254`
 
@@ -290,7 +290,7 @@ Der Zähler darf pro Sitzung bei 0 starten, solange `time()` Teil der ID bleibt.
 
 ---
 
-### <a id="b5"></a>B5 — Trennzeichen im Grund zerstören Sync-Nachrichten 🔍 · **hoch**
+### <a id="b5"></a>B5 — Trennzeichen im Grund zerstören Sync-Nachrichten 🔍 · **hoch** · ✔ BEHOBEN
 
 `LunaWolves/Modules/DKP.lua:357-371, 374-395, 434-457`
 
@@ -308,7 +308,7 @@ local id, player, delta, reason, entryType, officer, ts = strsplit(";", payload)
 
 ---
 
-### <a id="b6"></a>B6 — Send-Queue-Drossel greift nicht 🔍 · **hoch**
+### <a id="b6"></a>B6 — Send-Queue-Drossel greift nicht 🔍 · **hoch** · ✔ BEHOBEN
 
 `LunaWolves/Core.lua:141-155`
 
@@ -581,7 +581,7 @@ Bei aktuell kleinen Tabellen fällt das nicht auf; `activity_logs` wächst aller
 | Priorität | Punkte | Aufwand |
 |-----------|--------|---------|
 | ~~**Sofort**~~ | ~~[A1](#a1), [A5](#a5), [B1](#b1), [C6](#c6)~~ | ✔ erledigt |
-| **Kurzfristig** | [A2](#a2)–[A4](#a4), [A6](#a6), [B4](#b4), [B5](#b5), [B6](#b6) | jeweils klein, hoher Ertrag |
+| ~~**Kurzfristig**~~ | ~~[A2](#a2)–[A4](#a4), [A6](#a6), [B4](#b4)–[B6](#b6)~~ | ✔ erledigt |
 | **Mittelfristig** | [B2](#b2)+[B3](#b3) (Season-Modell), [B7](#b7)–[B9](#b9), [C1](#c1)–[C3](#c3) | Schema- bzw. Protokolländerung |
 | **Strukturell** | A7–A10, C5, C7, Testabdeckung, CI | begleitend |
 
@@ -589,7 +589,9 @@ Bei aktuell kleinen Tabellen fällt das nicht auf; `activity_logs` wächst aller
 
 ---
 
-## <a id="e-umgesetzt"></a>E. Umgesetzt (Sofort-Stufe)
+## <a id="e-umgesetzt"></a>E. Umgesetzt
+
+### Sofort-Stufe
 
 Behoben in `claude/zealous-archimedes-pka58j`. Verifiziert gegen eine echte PostgreSQL-16-Instanz mit allen 17 eingespielten Migrationen; `pnpm build` (5/5) und `pnpm test` (20/20) laufen durch.
 
@@ -668,6 +670,95 @@ Die Rechteprüfung ist jetzt fail closed. **Ohne konfigurierte Rollen kann niema
 2. `OFFICER_ROLE_IDS` in `apps/bot/.env` setzen — **die Variable fehlte bisher in der Vorlage**
 3. `pnpm db:migrate` läuft beim Deploy automatisch (`deploy/lxc/setup.sh:132`) und spielt `0016_indexes` mit ein
 
+---
+
+### Kurzfristige Stufe
+
+Verifiziert wie oben: 33 Verhaltensprüfungen gegen die echten Routen mit echter Datenbank, plus eine Regressionsprüfung der Sofort-Stufe. Die Lua-Änderungen laufen gegen WoW-API-Stubs, alle fünf Dateien bestehen die Syntaxprüfung.
+
+#### A2 — Raid-Endpunkte
+
+| Endpunkt | vorher | jetzt |
+|----------|--------|-------|
+| `POST /guilds/:guildId/raids` | `app.authenticate` | `requireRole("editor")` |
+| `PATCH /raids/:id` | `app.authenticate` | `requireRole("editor", guildFromRaidParam)` |
+| `POST /raids/:id/signup` | beliebige `characterId` | Charakter muss dem Konto gehören |
+| `PATCH /raids/:id/signup` | beliebige `characterId` | Charakter muss dem Konto gehören |
+
+`requireRole` nimmt jetzt einen expliziten Gilden-Resolver. Der vorherige Ansatz „irgendein `:id`-Parameter ist die Gilde" wäre bei `/raids/:id` ein stiller Fehlgriff gewesen — dort ist `:id` eine Raid-ID.
+
+**Derselbe Weg stand über den Bot offen.** `/raid signup <raid_id> <character> <role>` meldete jeden Gildencharakter per Name an, und `/raid create` hatte gar keine Officer-Prüfung. Beides ist mitkorrigiert:
+
+* `/raid create` verlangt jetzt die Officer-Rolle
+* `/raid signup` läuft über die Discord-Verknüpfung (wie die Kalender-Buttons schon vorher). Die Option `character` ist optional und dient nur noch der Auswahl unter den **eigenen** Charakteren
+* Das Autocomplete schlägt nur noch eigene Charaktere vor, statt eine Anmeldung zu suggerieren, die der Server ablehnt
+* `POST /bot/raids/:raidId/signup-by-char` verlangt `discordId` und prüft den Besitzer serverseitig
+* `isOfficer`/`officerLabel` liegen jetzt in `apps/bot/src/permissions.ts`, statt in `commands/dkp.ts` zu wohnen
+
+#### A3 — Gilden
+
+`POST /guilds` übernimmt `name`, `realm` und `faction` einzeln und validiert sie; `values(request.body)` hatte zuvor jede Spalte durchgelassen, darunter `isPrimary`. Beide Endpunkte verlangen jetzt die Admin-Rolle, `set-primary` mit `guildFromIdParam`.
+
+Nachgewiesen: ein Body mit `isPrimary: true` legt die Gilde an, das Feld wird aber verworfen.
+
+Gilden entstehen im Normalfall automatisch beim Addon-Sync (`sync.ts`), der Endpunkt bleibt also der manuelle Sonderfall. Der Bootstrap-Weg ist dadurch nicht blockiert.
+
+#### A4 — Charaktere
+
+`PATCH /characters/:id` übernimmt nur noch `level`, `itemLevel`, `mPlusScore` und `guildRank`. `POST /characters` verlangt die Admin-Rolle und validiert Name, Realm, Gilden-UUID und Klasse gegen die Enum-Liste — es war der Weg, einen Charakter mit **beliebigem Namen in beliebiger Gilde** anzulegen, und genau dieser Name ist die einzige Plausibilitätsprüfung der DKP-Vergabe.
+
+Der angelegte Charakter gehört jetzt niemandem mehr (`playerId` wird nicht gesetzt); die Verknüpfung passiert über den BattleTag-Abgleich im Sync.
+
+#### A6 — Leseendpunkte
+
+Authentifiziert: `/guilds`, `/guilds/:id`, `/guilds/:id/members`, `/guilds/:id/stats`, `/characters/:id`, `/guilds/:guildId/raids`, `/raids/:id`, `/guilds/:guildId/activity` sowie alle vier DKP-Leserouten.
+
+Höher eingestuft:
+* `GET /guilds/:guildId/sync/latest` → `requireRole("admin")` — der Roh-Snapshot enthält die komplette DKP-History und die BattleTags aus dem Versions-Modul
+* `GET /guilds/:guildId/sync/pending-entries` → `requireRole("editor")`. Im Review nicht eigens aufgeführt, beim Absichern aber aufgefallen: der Endpunkt markiert Einträge als ausgeliefert, ist also destruktiv, und jedes gültige JWT konnte damit den Rückkanal einer **fremden** Gilde leeren. Aufgerufen wird er von niemandem — der Desktop-Agent bezieht die Einträge aus der Sync-Antwort.
+
+Vollständige Prüfung aller 45 Routen: offen bleiben nur noch die vier `/auth/*`-Endpunkte (der OAuth-Ablauf selbst) und `/class-icons` (Blizzard-Icon-URLs, keine Gildendaten).
+
+#### B4 — Entry-IDs
+
+Zähler plus Sitzungs-Salz statt `math.random(1000, 9999)`. Das Salz deckt den Restfall ab, dass ein Officer in derselben Sekunde neu einloggt und der Zähler wieder bei 1 beginnt.
+
+Gemessen mit der echten Funktion aus `DKP.lua`:
+
+```
+ALT: 114 von 2.000 simulierten Bosskills mit Kollision (5,7 %)
+NEU: 0 Kollisionen bei 100.000 IDs in derselben Sekunde
+```
+
+Die 5,7 % liegen etwas über der im Review geschätzten 4,7 % — die Simulation ist der belastbarere Wert.
+
+#### B5 — Trennzeichen
+
+`SanitizeField()` entfernt `;` und `|` aus Freitext. Angewendet in `Award()` (damit lokale und entfernte Kopie identisch sind) und an allen vier Serialisierungsstellen — einschließlich `HandleSyncRequest`, was auch Altbestand aus den SavedVariables abdeckt, der vor dem Fix geschrieben wurde. Der Saisonname im RESET-Broadcast ist ebenfalls Freitext und wird mitbereinigt.
+
+Round-Trip-Prüfung mit dem echten Wire-Format:
+
+```
+"Loot;Trinket"  -> type=BOSS officer=Aiden ts=1758340000  ✅
+"Boss | Trash"  -> type=BOSS officer=Aiden ts=1758340000  ✅
+"a;b|c;d"       -> type=BOSS officer=Aiden ts=1758340000  ✅
+ohne Bereinigung-> type=Trinket officer=BOSS ts=nil   (Felder verschoben)
+```
+
+#### B6 — Sendedrossel
+
+`SEND_TIMER = C_Timer.After(...)` durch ein `SEND_RUNNING`-Flag ersetzt. Gegen WoW-API-Stubs gemessen, 30 Nachrichten eingereiht (Größenordnung eines Bosskill-Batches):
+
+```
+Sofort gesendet: 1 (vorher: alle 30)   Ticks bis leer: 30   zugestellt: 30
+```
+
+---
+
 ### Nicht angefasst
 
-Bewusst außerhalb der Sofort-Stufe geblieben: [A2](#a2) (Raid-Endpunkte), [A3](#a3)/[A4](#a4) (Mass Assignment), [A6](#a6) (offene Leseendpunkte) und alles ab „Mittelfristig". Diese Routen sind unverändert.
+Offen bleiben [A7](#a7)–[A10](#a10) (JWT in URLs, WebSocket-Auth, Desktop-`state`-Nonce, Token-Verschlüsselung), [B2](#b2)/[B3](#b3) (Season-Modell — Schema- und Protokolländerung, gehört zusammen angefasst), [B7](#b7)–[B15](#b15) und die Optimierungen [C1](#c1)–[C5](#c5), [C7](#c7).
+
+### Hinweis zur Oberfläche
+
+Web-Oberfläche und Discord-Befehle blenden Officer-Funktionen weiterhin für alle ein; der Server lehnt sie jetzt mit 403 ab und die Fehlermeldung erscheint im Formular. Das entspricht dem Verhalten, das die DKP-Verwaltungsseite schon vorher hatte. Ein Rollen-Gating der Oberfläche wäre eine eigene, rein kosmetische Aufgabe.

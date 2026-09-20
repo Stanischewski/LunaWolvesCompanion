@@ -11,6 +11,7 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { guildId: string } }>(
     "/guilds/:guildId/dkp/standings",
+    { onRequest: [app.authenticate] },
     async (request) => {
       return db.query.dkpStandings.findMany({
         where: eq(dkpStandings.guildId, request.params.guildId),
@@ -21,6 +22,7 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { guildId: string; playerName: string } }>(
     "/guilds/:guildId/dkp/standings/:playerName",
+    { onRequest: [app.authenticate] },
     async (request, reply) => {
       const standing = await db.query.dkpStandings.findFirst({
         where: and(
@@ -38,6 +40,7 @@ export async function dkpRoutes(app: FastifyInstance) {
     Querystring: { player?: string; type?: string; limit?: string; offset?: string };
   }>(
     "/guilds/:guildId/dkp/history",
+    { onRequest: [app.authenticate] },
     async (request) => {
       const { player, type, limit: limitStr, offset: offsetStr } = request.query;
       const limit = Math.min(Math.max(Number(limitStr) || 50, 1), 200);
@@ -63,6 +66,7 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { guildId: string } }>(
     "/guilds/:guildId/dkp/seasons",
+    { onRequest: [app.authenticate] },
     async (request) => {
       return db
         .select({

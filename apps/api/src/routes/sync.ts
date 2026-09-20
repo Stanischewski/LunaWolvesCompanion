@@ -6,6 +6,7 @@ import type { WowClass } from "@guild/shared-types";
 import { db } from "../db/index.js";
 import { guilds, characters, addonSnapshots, activityLogs, dkpEntries, dkpStandings, dkpTombstones, players } from "../db/schema.js";
 import { requirePlayerAccount } from "../lib/auth.js";
+import { requireRole } from "../lib/permissions.js";
 
 /**
  * Sync Service — Addon-Datenupload (Phase 2).
@@ -614,6 +615,7 @@ export async function syncRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { guildId: string }; Querystring: { limit?: string } }>(
     "/guilds/:guildId/activity",
+    { onRequest: [app.authenticate] },
     async (request) => {
       const limit = Math.min(Math.max(Number(request.query.limit) || 50, 1), 200);
       return db
@@ -638,8 +640,11 @@ export async function syncRoutes(app: FastifyInstance) {
   );
 
   app.get<{ Params: { guildId: string } }>(
+    // Markiert Einträge als ausgeliefert — destruktiv. Vorher genügte ein
+    // beliebiges JWT, womit jeder den Rückkanal einer fremden Gilde leeren
+    // konnte.
     "/guilds/:guildId/sync/pending-entries",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("editor")] },
     async (request) => {
       const { guildId } = request.params;
 
@@ -673,7 +678,10 @@ export async function syncRoutes(app: FastifyInstance) {
   );
 
   app.get<{ Params: { guildId: string } }>(
+    // Der Roh-Snapshot enthält die komplette DKP-History und die BattleTags aus
+    // dem Versions-Modul — der zugriffsbeschränkteste Endpunkt der API.
     "/guilds/:guildId/sync/latest",
+    { onRequest: [requireRole("admin")] },
     async (request, reply) => {
       const snapshot = await db.query.addonSnapshots.findFirst({
         where: eq(addonSnapshots.guildId, request.params.guildId),

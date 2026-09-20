@@ -3,6 +3,7 @@ import type { ChatInputCommandInteraction, AutocompleteInteraction, Client } fro
 import { api } from "../api.js";
 import { raidListEmbed, raidRosterEmbed } from "../embeds.js";
 import { updateCalendarMessage } from "../calendar.js";
+import { isOfficer } from "../permissions.js";
 import type { Command } from "./index.js";
 
 export const raidCommand: Command = {
@@ -46,8 +47,7 @@ export const raidCommand: Command = {
         .addStringOption((opt) =>
           opt
             .setName("character")
-            .setDescription("Charaktername")
-            .setRequired(true)
+            .setDescription("Eigener Charakter (nur nötig bei mehreren)")
             .setAutocomplete(true),
         )
         .addStringOption((opt) =>
@@ -84,6 +84,10 @@ export const raidCommand: Command = {
         const raids = await api.guild.raids();
         await interaction.editReply({ embeds: [raidListEmbed(raids)] });
       } else if (sub === "create") {
+        if (!isOfficer(interaction)) {
+          await interaction.editReply({ content: "❌ Nur Officers können Raids erstellen." });
+          return;
+        }
         const title = interaction.options.getString("title", true);
         const date = interaction.options.getString("date", true);
         const time = interaction.options.getString("time", true);
@@ -102,21 +106,53 @@ export const raidCommand: Command = {
         });
         updateCalendarMessage(interaction.client as Client<true>).catch(console.error);
       } else if (sub === "signup") {
+        // Anmeldung laeuft ueber die Discord-Verknuepfung. Frueher konnte hier
+        // ein beliebiger Gildencharakter per Name angemeldet werden.
         const raidId = interaction.options.getString("raid_id", true);
-        const charName = interaction.options.getString("character", true);
+        const charName = interaction.options.getString("character") ?? undefined;
         const role = interaction.options.getString("role", true);
-        const members = await api.guild.members();
-        const member = members.find((m) => m.name.toLowerCase() === charName.toLowerCase());
-        if (!member) {
+        const roleLabel = { tank: "🛡️ Tank", heal: "💚 Heiler", dps: "⚔️ DPS" }[role] ?? role;
+
+        const result = await api.raid.signupBot(raidId, {
+          discordId: interaction.user.id,
+          role,
+        });
+
+        if (result.status === "no_character") {
           await interaction.editReply({
-            content: `❌ Charakter **${charName}** nicht in der Gilde gefunden.`,
+            content:
+              "❌ Dein Discord-Konto ist mit keinem Gildencharakter verknüpft. Melde dich einmal auf der Webseite an.",
           });
           return;
         }
-        await api.raid.signup(raidId, { characterId: member.id, role });
-        const roleLabel = { tank: "🛡️ Tank", heal: "💚 Heiler", dps: "⚔️ DPS" }[role] ?? role;
+
+        if (result.status === "select_character") {
+          const options = result.characters ?? [];
+          const match = charName
+            ? options.find((c) => c.name.toLowerCase() === charName.toLowerCase())
+            : undefined;
+          if (!match) {
+            const names = options.map((c) => `\`${c.name}\``).join(", ");
+            await interaction.editReply({
+              content: charName
+                ? `❌ **${charName}** ist keiner deiner Charaktere. Verfügbar: ${names}`
+                : `Du hast mehrere Charaktere. Bitte mit der Option \`character\` wählen: ${names}`,
+            });
+            return;
+          }
+          await api.raid.signupBotByChar(raidId, {
+            characterId: match.id,
+            role,
+            discordId: interaction.user.id,
+          });
+          await interaction.editReply({
+            content: `✅ **${match.name}** als ${roleLabel} angemeldet.`,
+          });
+          return;
+        }
+
         await interaction.editReply({
-          content: `✅ **${member.name}** als ${roleLabel} angemeldet.`,
+          content: `✅ **${result.character?.name}** als ${roleLabel} angemeldet.`,
         });
       } else if (sub === "roster") {
         const raidId = interaction.options.getString("raid_id", true);
@@ -145,12 +181,14 @@ export const raidCommand: Command = {
         }));
       await interaction.respond(choices);
     } else if (focused.name === "character") {
-      const members = await api.guild.members().catch(() => []);
+      // Nur die eigenen verknuepften Charaktere vorschlagen — fremde anzubieten
+      // wuerde eine Anmeldung suggerieren, die der Server ablehnt.
+      const mine = await api.player.charactersOf(interaction.user.id).catch(() => []);
       const query = focused.value.toLowerCase();
-      const choices = members
-        .filter((m) => m.name.toLowerCase().startsWith(query))
+      const choices = mine
+        .filter((c) => c.name.toLowerCase().startsWith(query))
         .slice(0, 25)
-        .map((m) => ({ name: m.name, value: m.name }));
+        .map((c) => ({ name: c.name, value: c.name }));
       await interaction.respond(choices);
     }
   },

@@ -1,29 +1,9 @@
 import { SlashCommandBuilder } from "discord.js";
 import type { ChatInputCommandInteraction, AutocompleteInteraction } from "discord.js";
 import { api } from "../api.js";
-import { config } from "../config.js";
 import { dkpStandingsEmbed, dkpPlayerEmbed, dkpHistoryEmbed } from "../embeds.js";
+import { isOfficer, officerLabel } from "../permissions.js";
 import type { Command } from "./index.js";
-
-// Fail closed: Ist OFFICER_ROLE_IDS nicht gesetzt, darf niemand DKP buchen.
-// Eine fehlende Konfiguration darf nie in mehr Rechte muenden.
-function isOfficer(interaction: ChatInputCommandInteraction): boolean {
-  const roleIds = config.officerRoleIds;
-  if (roleIds.length === 0) {
-    console.warn("[DKP] OFFICER_ROLE_IDS ist nicht gesetzt — DKP-Buchungen sind gesperrt.");
-    return false;
-  }
-  const roles = interaction.member?.roles;
-  if (!roles) return false;
-  if (Array.isArray(roles)) return roleIds.some((id) => roles.includes(id));
-  if ("cache" in roles) return roleIds.some((id) => roles.cache.has(id));
-  return false;
-}
-
-/** Name des ausfuehrenden Officers fuer das DKP-Protokoll. */
-function officerLabel(interaction: ChatInputCommandInteraction): string {
-  return interaction.user.displayName;
-}
 
 export const dkpCommand: Command = {
   data: new SlashCommandBuilder()
