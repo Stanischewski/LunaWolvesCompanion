@@ -1,19 +1,9 @@
 import { SlashCommandBuilder } from "discord.js";
 import type { ChatInputCommandInteraction, AutocompleteInteraction } from "discord.js";
 import { api } from "../api.js";
-import { config } from "../config.js";
 import { dkpStandingsEmbed, dkpPlayerEmbed, dkpHistoryEmbed } from "../embeds.js";
+import { isOfficer, officerLabel } from "../permissions.js";
 import type { Command } from "./index.js";
-
-function isOfficer(interaction: ChatInputCommandInteraction): boolean {
-  const roleIds = config.officerRoleIds;
-  if (roleIds.length === 0) return true;
-  const roles = interaction.member?.roles;
-  if (!roles) return false;
-  if (Array.isArray(roles)) return roleIds.some((id) => roles.includes(id));
-  if ("cache" in roles) return roleIds.some((id) => roles.cache.has(id));
-  return false;
-}
 
 export const dkpCommand: Command = {
   data: new SlashCommandBuilder()
@@ -102,7 +92,7 @@ export const dkpCommand: Command = {
         const player = interaction.options.getString("player", true);
         const amount = interaction.options.getInteger("amount", true);
         const reason = interaction.options.getString("reason") ?? "Discord Award";
-        await api.dkp.award(player, amount, reason);
+        await api.dkp.award(player, amount, reason, officerLabel(interaction));
         await interaction.editReply({
           content: `✅ **${player}** hat **+${amount} DKP** erhalten. Grund: ${reason}`,
         });
@@ -114,7 +104,7 @@ export const dkpCommand: Command = {
         const player = interaction.options.getString("player", true);
         const amount = interaction.options.getInteger("amount", true);
         const reason = interaction.options.getString("reason") ?? "Discord Spend";
-        await api.dkp.spend(player, amount, reason);
+        await api.dkp.spend(player, amount, reason, officerLabel(interaction));
         await interaction.editReply({
           content: `✅ **${player}** hat **-${amount} DKP** ausgegeben. Grund: ${reason}`,
         });

@@ -97,6 +97,13 @@ export const api = {
         body: JSON.stringify({ dkpMessageId }),
       }),
   },
+  player: {
+    /** Verknüpfte Charaktere eines Discord-Nutzers (für Autocomplete). */
+    charactersOf: (discordId: string) =>
+      apiFetch<Array<{ id: string; name: string; realm: string; class: string }>>(
+        `/bot/players/${encodeURIComponent(discordId)}/characters`,
+      ),
+  },
   guild: {
     get: () => apiFetch<GuildInfo>(`/guilds/${config.lunaGuildId}`),
     members: () => apiFetch<MemberCharacter[]>(`/guilds/${config.lunaGuildId}/members`),
@@ -109,17 +116,13 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
-    signup: (id: string, body: { characterId: string; role: string; status?: string }) =>
-      apiFetch<RaidSignup>(`/raids/${id}/signup`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
     signupBot: (id: string, body: { discordId: string; role: string }) =>
       apiFetch<SignupBotResult>(`/bot/raids/${id}/signup`, {
         method: "POST",
         body: JSON.stringify(body),
       }),
-    signupBotByChar: (id: string, body: { characterId: string; role: string }) =>
+    // discordId wird serverseitig gegen den Besitzer des Charakters geprueft
+    signupBotByChar: (id: string, body: { characterId: string; role: string; discordId: string }) =>
       apiFetch<{ status: string }>(`/bot/raids/${id}/signup-by-char`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -144,15 +147,17 @@ export const api = {
       apiFetch<DkpEntry[]>(
         `/guilds/${config.lunaGuildId}/dkp/history?limit=10${player ? `&player=${encodeURIComponent(player)}` : ""}`,
       ),
-    award: (playerName: string, amount: number, reason: string) =>
+    // officerName landet im DKP-Protokoll — ohne ihn stuende dort fuer jede
+    // ueber Discord gebuchte Transaktion nur "Discord-Bot".
+    award: (playerName: string, amount: number, reason: string, officerName: string) =>
       apiFetch<DkpEntry>(`/guilds/${config.lunaGuildId}/dkp/award`, {
         method: "POST",
-        body: JSON.stringify({ playerName, amount, reason }),
+        body: JSON.stringify({ playerName, amount, reason, officerName }),
       }),
-    spend: (playerName: string, amount: number, reason: string) =>
+    spend: (playerName: string, amount: number, reason: string, officerName: string) =>
       apiFetch<DkpEntry>(`/guilds/${config.lunaGuildId}/dkp/spend`, {
         method: "POST",
-        body: JSON.stringify({ playerName, amount, reason }),
+        body: JSON.stringify({ playerName, amount, reason, officerName }),
       }),
   },
 };

@@ -1,25 +1,45 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/index.js";
 import { guilds, characters, activityLogs, players } from "../db/schema.js";
-import { eq, and, gt, gte, count, sql, ne } from "drizzle-orm";
+import { eq, and, gt, gte, count, sql, ne, isNull, isNotNull } from "drizzle-orm";
+import { requireRole, guildFromIdParam } from "../lib/permissions.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function guildRoutes(app: FastifyInstance) {
-  app.get("/guilds", async () => {
+  app.get("/guilds", { onRequest: [app.authenticate] }, async () => {
     return db.query.guilds.findMany();
   });
 
+  // Gilden entstehen im Normalfall automatisch beim Addon-Sync. Dieser Endpunkt
+  // ist der manuelle Sonderfall und daher Admins vorbehalten.
+  // Felder werden einzeln uebernommen: `values(request.body)` liess sonst
+  // beliebige Spalten setzen — etwa isPrimary, was die Rollenaufloesung steuert.
   app.post<{
-    Body: { name: string; realm: string; faction: "alliance" | "horde" };
-  }>("/guilds", { onRequest: [app.authenticate] }, async (request, reply) => {
-    const [guild] = await db.insert(guilds).values(request.body).returning();
+    Body: { name?: unknown; realm?: unknown; faction?: unknown };
+  }>("/guilds", { onRequest: [requireRole("admin")] }, async (request, reply) => {
+    const { name, realm, faction } = request.body ?? {};
+
+    if (typeof name !== "string" || !name.trim()) {
+      return reply.status(400).send({ error: "name erforderlich" });
+    }
+    if (typeof realm !== "string" || !realm.trim()) {
+      return reply.status(400).send({ error: "realm erforderlich" });
+    }
+    if (faction !== "alliance" && faction !== "horde") {
+      return reply.status(400).send({ error: "faction muss 'alliance' oder 'horde' sein" });
+    }
+
+    const [guild] = await db
+      .insert(guilds)
+      .values({ name: name.trim().slice(0, 128), realm: realm.trim().slice(0, 64), faction })
+      .returning();
     return reply.status(201).send(guild);
   });
 
   app.post<{ Params: { id: string } }>(
     "/guilds/:id/set-primary",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("admin", guildFromIdParam)] },
     async (request, reply) => {
       const { id } = request.params;
       if (!UUID_RE.test(id)) return reply.status(400).send({ error: "Ungültige ID" });
@@ -35,7 +55,7 @@ export async function guildRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get<{ Params: { id: string } }>("/guilds/:id", async (request, reply) => {
+  app.get<{ Params: { id: string } }>("/guilds/:id", { onRequest: [app.authenticate] }, async (request, reply) => {
     if (!UUID_RE.test(request.params.id)) return reply.status(400).send({ error: "Ungültige ID" });
     const guild = await db.query.guilds.findFirst({
       where: eq(guilds.id, request.params.id),
@@ -44,12 +64,19 @@ export async function guildRoutes(app: FastifyInstance) {
     return guild;
   });
 
-  app.get<{ Params: { id: string } }>("/guilds/:id/members", async (request, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { includeLeft?: string } }>(
+    "/guilds/:id/members",
+    { onRequest: [app.authenticate] },
+    async (request, reply) => {
     if (!UUID_RE.test(request.params.id)) return reply.status(400).send({ error: "Ungültige ID" });
     const guild = await db.query.guilds.findFirst({
       where: eq(guilds.id, request.params.id),
     });
     if (!guild) return reply.status(404).send({ error: "Gilde nicht gefunden" });
+
+    // Ausgetretene bleiben in der DB (DKP-History), gehören aber nicht ins
+    // Roster. ?includeLeft=1 liefert sie mit.
+    const includeLeft = request.query.includeLeft === "1";
 
     const rows = await db
       .select({
@@ -62,12 +89,18 @@ export async function guildRoutes(app: FastifyInstance) {
         mPlusScore: characters.mPlusScore,
         guildRank: characters.guildRank,
         lastLogin: characters.lastLogin,
+        leftGuildAt: characters.leftGuildAt,
         bnetTag: players.bnetTag,
         displayName: players.displayName,
       })
       .from(characters)
       .leftJoin(players, eq(characters.playerId, players.id))
-      .where(eq(characters.guildId, request.params.id));
+      .where(
+        and(
+          eq(characters.guildId, request.params.id),
+          includeLeft ? undefined : isNull(characters.leftGuildAt),
+        ),
+      );
 
     return rows.map((r) => ({
       ...r,
@@ -75,9 +108,10 @@ export async function guildRoutes(app: FastifyInstance) {
       bnetTag: undefined,
       displayName: undefined,
     }));
-  });
+    },
+  );
 
-  app.get<{ Params: { id: string } }>("/guilds/:id/stats", async (request, reply) => {
+  app.get<{ Params: { id: string } }>("/guilds/:id/stats", { onRequest: [app.authenticate] }, async (request, reply) => {
     const guildId = request.params.id;
     if (!UUID_RE.test(guildId)) return reply.status(400).send({ error: "Ungültige ID" });
     const guild = await db.query.guilds.findFirst({ where: eq(guilds.id, guildId) });
@@ -91,7 +125,12 @@ export async function guildRoutes(app: FastifyInstance) {
         avgItemLevel: sql<number>`COALESCE(ROUND(AVG(${characters.itemLevel}::numeric), 0), 0)`,
       })
       .from(characters)
-      .where(eq(characters.guildId, guildId));
+      .where(and(eq(characters.guildId, guildId), isNull(characters.leftGuildAt)));
+
+    const [{ formerMembers }] = await db
+      .select({ formerMembers: count() })
+      .from(characters)
+      .where(and(eq(characters.guildId, guildId), isNotNull(characters.leftGuildAt)));
 
     const activityByDay = await db
       .select({
@@ -110,7 +149,7 @@ export async function guildRoutes(app: FastifyInstance) {
         count: count(),
       })
       .from(characters)
-      .where(and(eq(characters.guildId, guildId), gt(characters.itemLevel, 0)))
+      .where(and(eq(characters.guildId, guildId), isNull(characters.leftGuildAt), gt(characters.itemLevel, 0)))
       .groupBy(sql`(${characters.itemLevel} / 10) * 10`)
       .orderBy(sql`(${characters.itemLevel} / 10) * 10`);
 
@@ -128,6 +167,7 @@ export async function guildRoutes(app: FastifyInstance) {
 
     return {
       totalMembers: totals?.totalMembers ?? 0,
+      formerMembers,
       avgItemLevel: Number(totals?.avgItemLevel ?? 0),
       activeMembers7d,
       activityByDay,

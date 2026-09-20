@@ -113,6 +113,20 @@
       "when": 1748217600000,
       "tag": "0015_guild_primary",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1748304000000,
+      "tag": "0016_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1748390400000,
+      "tag": "0017_seasons_and_departures",
+      "breakpoints": true
     }
   ]
 }

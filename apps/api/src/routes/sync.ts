@@ -1,10 +1,14 @@
 import type { FastifyInstance } from "fastify";
-import { eq, and, desc, sql, gt, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, sql, isNull, isNotNull, count, inArray, notInArray } from "drizzle-orm";
 import { parseLua, LuaParseError } from "@guild/lua-parser";
 import type { LuaValue } from "@guild/lua-parser";
 import type { WowClass } from "@guild/shared-types";
 import { db } from "../db/index.js";
-import { guilds, characters, addonSnapshots, activityLogs, dkpEntries, dkpStandings, dkpTombstones, players } from "../db/schema.js";
+import { guilds, characters, addonSnapshots, activityLogs, dkpEntries, dkpStandings, dkpTombstones, dkpSeasons } from "../db/schema.js";
+import { requirePlayerAccount } from "../lib/auth.js";
+import { requireRole } from "../lib/permissions.js";
+import { getSeasonStart, recalculateStandings, getActiveTombstones } from "../lib/dkpSeason.js";
+import { cacheSetIfAbsent } from "../lib/cache.js";
 
 /**
  * Sync Service — Addon-Datenupload (Phase 2).
@@ -26,9 +30,21 @@ import { guilds, characters, addonSnapshots, activityLogs, dkpEntries, dkpStandi
 
 const MIN_ADDON_VERSION = 1;
 
-// Einfacher In-Memory-Cooldown pro Spieler (verhindert Sync-Spam)
-const syncCooldowns = new Map<string, number>();
-const SYNC_COOLDOWN_MS = 60_000;
+/** Muss zu TOMBSTONE_TTL in Modules/DKP.lua passen. */
+const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Obergrenze fuer den Rueckkanal, damit unbestaetigte Eintraege die Antwort nicht sprengen. */
+const PENDING_ENTRY_LIMIT = 200;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Cooldown pro Spieler (verhindert Sync-Spam). Ueber SYNC_COOLDOWN_MS
+// konfigurierbar — 0 schaltet ihn ab (Tests, Staging).
+//
+// Liegt im gemeinsamen Cache statt in einer prozesslokalen Map: sonst haette
+// jeder PM2-Worker seinen eigenen Cooldown, und ein Nutzer koennte ihn durch
+// Wiederholung umgehen, je nachdem welcher Worker antwortet.
+const SYNC_COOLDOWN_MS = Number(process.env.SYNC_COOLDOWN_MS ?? 60_000);
 
 const DKP_TYPE_MAP: Record<string, "manual" | "boss" | "spend" | "correction"> = {
   MANUAL: "manual",
@@ -203,10 +219,13 @@ function toLuaArray(value: LuaValue): LuaValue[] {
 
 function parseDkp(
   rootValue: LuaValue,
-): { entries: AddonDkpEntry[]; tombstones: AddonTombstone[] } | null {
+): { entries: AddonDkpEntry[]; tombstones: AddonTombstone[]; seasonEpoch: number } | null {
   if (!isLuaObject(rootValue)) return null;
   const dkpRaw = rootValue.DKP;
   if (!isLuaObject(dkpRaw)) return null;
+
+  // Zeitpunkt des letzten Season-Resets im Addon (0 = noch keiner).
+  const seasonEpoch = typeof dkpRaw.seasonEpoch === "number" ? dkpRaw.seasonEpoch : 0;
 
   const entries: AddonDkpEntry[] = [];
   for (const raw of toLuaArray(dkpRaw.history)) {
@@ -236,13 +255,13 @@ function parseDkp(
     });
   }
 
-  return { entries, tombstones };
+  return { entries, tombstones, seasonEpoch };
 }
 
 export async function syncRoutes(app: FastifyInstance) {
   app.post<{ Body: string }>(
     "/sync/addon-data",
-    { onRequest: [app.authenticate], bodyLimit: 2_097_152 },
+    { onRequest: [app.authenticate, requirePlayerAccount], bodyLimit: 2_097_152 },
     async (request, reply) => {
       if (!request.body || !request.body.trim()) {
         return reply
@@ -279,13 +298,19 @@ export async function syncRoutes(app: FastifyInstance) {
         });
       }
 
-      const nowMs = Date.now();
-      const lastSync = syncCooldowns.get(request.user.sub) ?? 0;
-      if (nowMs - lastSync < SYNC_COOLDOWN_MS) {
-        const waitSec = Math.ceil((SYNC_COOLDOWN_MS - (nowMs - lastSync)) / 1000);
-        return reply.status(429).send({ error: `Sync-Cooldown aktiv. Bitte ${waitSec}s warten.` });
+      if (SYNC_COOLDOWN_MS > 0) {
+        const fresh = await cacheSetIfAbsent(
+          `sync:${request.user.sub}`,
+          String(Date.now()),
+          SYNC_COOLDOWN_MS,
+        );
+        if (!fresh) {
+          const waitSec = Math.ceil(SYNC_COOLDOWN_MS / 1000);
+          return reply
+            .status(429)
+            .send({ error: `Sync-Cooldown aktiv. Bitte bis zu ${waitSec}s warten.` });
+        }
       }
-      syncCooldowns.set(request.user.sub, nowMs);
 
       const result = await db.transaction(async (tx) => {
         let guild = await tx.query.guilds.findFirst({
@@ -301,12 +326,7 @@ export async function syncRoutes(app: FastifyInstance) {
             where: eq(guilds.name, roster.guild.name),
           });
         }
-        if (guild) {
-          await tx
-            .update(guilds)
-            .set({ memberCount: roster.members.length })
-            .where(eq(guilds.id, guild.id));
-        } else {
+        if (!guild) {
           const inserted = await tx
             .insert(guilds)
             .values({
@@ -324,69 +344,200 @@ export async function syncRoutes(app: FastifyInstance) {
           .values({ guildId: guild.id, uploadedBy: request.user.sub, rawData })
           .returning({ id: addonSnapshots.id });
 
-        let updated = 0;
-        let created = 0;
+        // ── Saison-Grenze ────────────────────────────────────────────────
+        // Hat ein Officer im Spiel "/lw dkp reset" ausgeführt, kennt nur das
+        // Addon die neue Saison. Der Server übernimmt sie hier, sonst würde
+        // der Sync die alten Einträge weiter mitsummieren.
+        let seasonStart = await getSeasonStart(tx, guild.id);
+        const addonEpoch = parseDkp(rawData)?.seasonEpoch ?? 0;
+        let seasonAdoptedFromAddon = false;
+
+        if (addonEpoch > 0) {
+          const addonEpochDate = new Date(addonEpoch * 1000);
+          if (addonEpochDate > seasonStart) {
+            await tx.insert(dkpSeasons).values({
+              guildId: guild.id,
+              name: `Saison bis ${addonEpochDate.toISOString().slice(0, 10)} (Addon)`,
+              archivedBy: "Addon",
+              startedAt: seasonStart.getTime() === 0 ? null : seasonStart,
+              archivedAt: addonEpochDate,
+              snapshotData: await tx
+                .select()
+                .from(dkpStandings)
+                .where(eq(dkpStandings.guildId, guild.id)),
+            });
+            seasonStart = addonEpochDate;
+            seasonAdoptedFromAddon = true;
+          }
+        }
+
+        // ── Charaktere abgleichen ────────────────────────────────────────
+        // Frueher lief hier pro Mitglied ein SELECT plus ein INSERT/UPDATE und
+        // ggf. ein activity-INSERT — bei 500 Mitgliedern bis zu 1.500
+        // Roundtrips, und das alles unter Schreibsperren in einer Transaktion.
+        // Jetzt: einmal vorladen, im Speicher diffen, dann je eine Anweisung
+        // fuer Anlegen, Aktualisieren und Aktivitaetseintraege.
+        const existingChars = await tx
+          .select({
+            id: characters.id,
+            name: characters.name,
+            realm: characters.realm,
+            lastLogin: characters.lastLogin,
+            leftGuildAt: characters.leftGuildAt,
+          })
+          .from(characters)
+          .where(eq(characters.guildId, guild.id));
+
+        const charKey = (name: string, realm: string) => `${name.toLowerCase()}|${realm.toLowerCase()}`;
+        const byKey = new Map(existingChars.map((c) => [charKey(c.name, c.realm), c]));
+
+        type PendingActivity = { characterId: string; online: boolean; level: number; itemLevel: number };
+        const toInsert: (typeof characters.$inferInsert)[] = [];
+        const toUpdate: Array<{
+          id: string; level: number; itemLevel: number; guildRank: number;
+          lastLogin: Date; class: WowClass; wasAway: boolean;
+        }> = [];
+        const newActivity: PendingActivity[] = [];
+        const seenIds = new Set<string>();
+        const insertMeta = new Map<string, { online: boolean; level: number; itemLevel: number }>();
+
         for (const member of roster.members) {
           const mappedClass = CLASS_MAP[member.class.toUpperCase()];
           if (!mappedClass) continue; // unbekannte Klasse — überspringen
 
           const seenAt = member.online ? roster.scannedAt : member.lastSeen;
           const lastLogin = new Date(seenAt * 1000);
-
-          const existing = await tx.query.characters.findFirst({
-            where: and(
-              eq(characters.guildId, guild.id),
-              eq(characters.name, member.name),
-              eq(characters.realm, member.realm),
-            ),
-          });
+          const existing = byKey.get(charKey(member.name, member.realm));
 
           if (!existing) {
-            const [inserted] = await tx
-              .insert(characters)
-              .values({
-                guildId: guild.id,
-                name: member.name,
-                realm: member.realm,
-                class: mappedClass,
-                level: member.level,
-                itemLevel: member.itemLevel,
-                guildRank: member.guildRank,
-                lastLogin,
-              })
-              .returning();
-            await tx.insert(activityLogs).values({
-              characterId: inserted.id,
-              eventType: "seen",
-              eventData: { online: member.online, level: member.level, itemLevel: member.itemLevel },
-              source: "addon",
+            insertMeta.set(charKey(member.name, member.realm), {
+              online: member.online, level: member.level, itemLevel: member.itemLevel,
             });
-            created++;
-            continue;
-          }
-
-          await tx
-            .update(characters)
-            .set({
+            toInsert.push({
+              guildId: guild.id,
+              name: member.name,
+              realm: member.realm,
+              class: mappedClass,
               level: member.level,
               itemLevel: member.itemLevel,
               guildRank: member.guildRank,
               lastLogin,
-              class: mappedClass,
-            })
-            .where(eq(characters.id, existing.id));
-          updated++;
+            });
+            continue;
+          }
+
+          seenIds.add(existing.id);
+          toUpdate.push({
+            id: existing.id,
+            level: member.level,
+            itemLevel: member.itemLevel,
+            guildRank: member.guildRank,
+            lastLogin,
+            class: mappedClass,
+            wasAway: existing.leftGuildAt !== null,
+          });
 
           const previous = existing.lastLogin ? existing.lastLogin.getTime() : 0;
           if (lastLogin.getTime() > previous) {
-            await tx.insert(activityLogs).values({
+            newActivity.push({
               characterId: existing.id,
-              eventType: "seen",
-              eventData: { online: member.online, level: member.level, itemLevel: member.itemLevel },
-              source: "addon",
+              online: member.online, level: member.level, itemLevel: member.itemLevel,
             });
           }
         }
+
+        let created = 0;
+        if (toInsert.length > 0) {
+          const insertedRows = await tx
+            .insert(characters)
+            .values(toInsert)
+            .returning({ id: characters.id, name: characters.name, realm: characters.realm });
+          created = insertedRows.length;
+          for (const row of insertedRows) {
+            seenIds.add(row.id);
+            const meta = insertMeta.get(charKey(row.name, row.realm));
+            if (meta) newActivity.push({ characterId: row.id, ...meta });
+          }
+        }
+
+        // Eine UPDATE ... FROM (VALUES ...)-Anweisung statt N Einzelupdates.
+        let updated = 0;
+        if (toUpdate.length > 0) {
+          const rows = toUpdate.map(
+            // lastLogin als ISO-String: Date-Objekte kann postgres.js in
+            // tx.execute nicht binden.
+            (u) => sql`(${u.id}::uuid, ${u.level}::int, ${u.itemLevel}::int, ${u.guildRank}::int, ${u.lastLogin.toISOString()}::timestamptz, ${u.class}::wow_class)`,
+          );
+          await tx.execute(sql`
+            UPDATE characters AS c
+            SET level = v.level,
+                item_level = v.item_level,
+                guild_rank = v.guild_rank,
+                last_login = v.last_login,
+                class = v.class,
+                left_guild_at = NULL
+            FROM (VALUES ${sql.join(rows, sql`, `)})
+              AS v(id, level, item_level, guild_rank, last_login, class)
+            WHERE c.id = v.id
+          `);
+          updated = toUpdate.length;
+        }
+        const returnedCount = toUpdate.filter((u) => u.wasAway).length;
+
+        if (newActivity.length > 0) {
+          await tx.insert(activityLogs).values(
+            newActivity.map((a) => ({
+              characterId: a.characterId,
+              eventType: "seen",
+              eventData: { online: a.online, level: a.level, itemLevel: a.itemLevel },
+              source: "addon" as const,
+            })),
+          );
+        }
+
+        // ── Gildenaustritte (B9) ─────────────────────────────────────────
+        // Charaktere, die im Snapshot fehlen, gelten als ausgetreten. Bewusst
+        // kein Loeschen — DKP-History und Raid-Anmeldungen bleiben erhalten.
+        //
+        // SCHUTZ: Ist im Spiel "Offline anzeigen" deaktiviert, liefert
+        // GetGuildRosterInfo nur die eingeloggten Mitglieder (Review B10). Ein
+        // solcher Teil-Snapshot wuerde die halbe Gilde als ausgetreten
+        // markieren. Deshalb wird nur markiert, wenn der Snapshot mindestens
+        // 70 % der bekannten aktiven Charaktere enthaelt.
+        const activeBefore = existingChars.filter((c) => c.leftGuildAt === null).length;
+        const coverage = activeBefore === 0 ? 1 : seenIds.size / activeBefore;
+        let markedAsLeft = 0;
+        let departureCheckSkipped = false;
+
+        if (coverage >= 0.7) {
+          const seen = [...seenIds];
+          const departed = await tx
+            .update(characters)
+            .set({ leftGuildAt: new Date() })
+            .where(
+              and(
+                eq(characters.guildId, guild.id),
+                isNull(characters.leftGuildAt),
+                seen.length > 0 ? notInArray(characters.id, seen) : undefined,
+              ),
+            )
+            .returning({ id: characters.id });
+          markedAsLeft = departed.length;
+        } else {
+          departureCheckSkipped = true;
+          app.log.warn(
+            `[Sync] Gilde ${guild.id}: Snapshot deckt nur ${Math.round(coverage * 100)} % ` +
+              `der aktiven Charaktere ab — Austrittspruefung uebersprungen. ` +
+              `Vermutlich ist im Spiel "Offline anzeigen" deaktiviert.`,
+          );
+        }
+
+        // memberCount zaehlt die aktiven Charaktere, nicht die Snapshot-Groesse
+        const [{ activeCount }] = await tx
+          .select({ activeCount: count() })
+          .from(characters)
+          .where(and(eq(characters.guildId, guild.id), isNull(characters.leftGuildAt)));
+        await tx.update(guilds).set({ memberCount: activeCount }).where(eq(guilds.id, guild.id));
 
         // DKP-Merge
         const dkp = parseDkp(rawData);
@@ -395,31 +546,33 @@ export async function syncRoutes(app: FastifyInstance) {
         const dkpAffectedPlayers = new Set<string>();
 
         if (dkp) {
-          // Tombstones zuerst einfügen
-          for (const tomb of dkp.tombstones) {
-            const deletedAt = new Date(tomb.timestamp * 1000);
-            const expiresAt = new Date(deletedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
-            const [inserted] = await tx
+          // Tombstones als Batch einfügen (1 Query statt N)
+          if (dkp.tombstones.length > 0) {
+            const insertedTombs = await tx
               .insert(dkpTombstones)
-              .values({
-                guildId: guild.id,
-                playerName: tomb.player,
-                deletedBy: tomb.officer,
-                deletedAt,
-                expiresAt,
-              })
+              .values(
+                dkp.tombstones.map((tomb) => {
+                  const deletedAt = new Date(tomb.timestamp * 1000);
+                  return {
+                    guildId: guild.id,
+                    playerName: tomb.player,
+                    deletedBy: tomb.officer,
+                    deletedAt,
+                    expiresAt: new Date(deletedAt.getTime() + TOMBSTONE_TTL_MS),
+                  };
+                }),
+              )
               .onConflictDoNothing()
-              .returning({ id: dkpTombstones.id });
-            if (inserted) {
-              dkpTombstonesInserted++;
-              dkpAffectedPlayers.add(tomb.player);
-            }
+              .returning({ playerName: dkpTombstones.playerName });
+            dkpTombstonesInserted = insertedTombs.length;
+            for (const row of insertedTombs) dkpAffectedPlayers.add(row.playerName);
           }
 
-          // Alle aktiven Tombstones für diese Gilde laden (für Entry-Filter)
-          const activeTombstones = await tx.query.dkpTombstones.findMany({
-            where: eq(dkpTombstones.guildId, guild.id),
-          });
+          // Nur *aktive* Tombstones filtern. Der Server wertete expiresAt bisher
+          // gar nicht aus, womit ein einmal gelöschter Spieler dauerhaft
+          // gefiltert blieb — während das Addon ihn nach 90 Tagen längst wieder
+          // akzeptierte. Die beiden Seiten drifteten dadurch auseinander.
+          const activeTombstones = await getActiveTombstones(tx, guild.id);
           const tombstoneMap = new Map<string, Date>(
             activeTombstones.map((t) => [t.playerName, t.deletedAt]),
           );
@@ -468,69 +621,33 @@ export async function syncRoutes(app: FastifyInstance) {
             }
           }
 
-          // Nur Standings für Charaktere berechnen, die in der characters-Tabelle bekannt sind.
-          // Unbekannte player_name-Einträge (z.B. falsch erkannte Spieler) werden ignoriert.
-          const guildChars = await tx
-            .select({ name: characters.name })
-            .from(characters)
-            .where(eq(characters.guildId, guild.id));
-          const knownNames = new Set(guildChars.map((c) => c.name));
-
-          // Standings für alle betroffenen Spieler neu berechnen
-          for (const playerName of dkpAffectedPlayers) {
-            if (!knownNames.has(playerName)) continue;
-            const tombstone = tombstoneMap.get(playerName);
-            const baseWhere = and(
-              eq(dkpEntries.guildId, guild.id),
-              eq(dkpEntries.playerName, playerName),
-            );
-            const whereClause = tombstone
-              ? and(baseWhere, gt(dkpEntries.occurredAt, tombstone))
-              : baseWhere;
-
-            const [sums] = await tx
-              .select({
-                current: sql<number>`COALESCE(SUM(${dkpEntries.delta}), 0)::int`,
-                lifetime: sql<number>`COALESCE(SUM(CASE WHEN ${dkpEntries.delta} > 0 THEN ${dkpEntries.delta} ELSE 0 END), 0)::int`,
-              })
-              .from(dkpEntries)
-              .where(whereClause);
-
-            await tx
-              .insert(dkpStandings)
-              .values({ guildId: guild.id, playerName, current: sums.current, lifetime: sums.lifetime })
-              .onConflictDoUpdate({
-                target: [dkpStandings.guildId, dkpStandings.playerName],
-                set: { current: sums.current, lifetime: sums.lifetime, updatedAt: new Date() },
-              });
-          }
+          // Standings aller betroffenen Spieler in EINER Anweisung neu berechnen
+          // (vorher: ein SELECT plus ein UPSERT je Spieler). Die Saison-Grenze
+          // sorgt dafür, dass ein Season-Reset hält — ohne sie summierte der
+          // Sync wieder über *alle* Einträge und holte den kompletten
+          // Vor-Reset-Stand zurück.
+          await recalculateStandings(tx, guild.id, [...dkpAffectedPlayers], seasonStart);
         }
 
-        // Auto-Linking: Versions-BattleTags mit players.bnetTag abgleichen
+        // Auto-Linking: Versions-BattleTags mit players.bnetTag abgleichen.
+        // Vorher zwei SELECTs plus ein UPDATE je Eintrag — jetzt eine Anweisung.
         const versionEntries = parseVersions(rawData);
         let charactersLinked = 0;
-        for (const entry of versionEntries) {
-          // Nur Characters dieser Gilde berücksichtigen
-          const character = await tx.query.characters.findFirst({
-            where: and(
-              eq(characters.guildId, guild.id),
-              eq(characters.name, entry.name),
-              eq(characters.realm, entry.realm),
-              isNull(characters.playerId),
-            ),
-          });
-          if (!character) continue;
-
-          const player = await tx.query.players.findFirst({
-            where: eq(players.bnetTag, entry.battleTag),
-          });
-          if (!player) continue;
-
-          await tx
-            .update(characters)
-            .set({ playerId: player.id })
-            .where(eq(characters.id, character.id));
-          charactersLinked++;
+        if (versionEntries.length > 0) {
+          const rows = versionEntries.map(
+            (e) => sql`(${e.name}, ${e.realm}, ${e.battleTag})`,
+          );
+          const linkResult = await tx.execute(sql`
+            UPDATE characters AS c
+            SET player_id = p.id
+            FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(name, realm, tag)
+            JOIN players p ON p.bnet_tag = v.tag
+            WHERE c.guild_id = ${guild.id}::uuid
+              AND c.name = v.name
+              AND c.realm = v.realm
+              AND c.player_id IS NULL
+          `);
+          charactersLinked = (linkResult as unknown as { count?: number }).count ?? 0;
         }
 
         const latestAddonEntryTimestamp = dkp
@@ -566,7 +683,14 @@ export async function syncRoutes(app: FastifyInstance) {
         });
       }
 
-      // Rückkanal: ausstehende Web-Einträge zusammenstellen und als geliefert markieren
+      // Rückkanal: ausstehende Web-Einträge ausliefern.
+      //
+      // Sie werden hier NICHT als geliefert markiert. Vorher geschah das
+      // zusammen mit dem Absenden der Antwort — brach die Verbindung ab oder
+      // stürzte der Client beim Verarbeiten, waren die im Web vergebenen
+      // Punkte dauerhaft verloren: addonSyncedAt war gesetzt, die Einträge
+      // tauchten nie wieder auf. Die Bestätigung erfolgt jetzt separat über
+      // POST /guilds/:guildId/sync/ack.
       const pendingWebEntries = await db
         .select()
         .from(dkpEntries)
@@ -577,20 +701,8 @@ export async function syncRoutes(app: FastifyInstance) {
             isNull(dkpEntries.addonSyncedAt),
           ),
         )
-        .orderBy(dkpEntries.occurredAt);
-
-      if (pendingWebEntries.length > 0) {
-        await db
-          .update(dkpEntries)
-          .set({ addonSyncedAt: new Date() })
-          .where(
-            and(
-              eq(dkpEntries.guildId, result.guild.id),
-              eq(dkpEntries.source, "web"),
-              isNull(dkpEntries.addonSyncedAt),
-            ),
-          );
-      }
+        .orderBy(dkpEntries.occurredAt)
+        .limit(PENDING_ENTRY_LIMIT);
 
       return reply.status(201).send({
         snapshotId: result.snapshotId,
@@ -613,6 +725,7 @@ export async function syncRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { guildId: string }; Querystring: { limit?: string } }>(
     "/guilds/:guildId/activity",
+    { onRequest: [app.authenticate] },
     async (request) => {
       const limit = Math.min(Math.max(Number(request.query.limit) || 50, 1), 200);
       return db
@@ -637,12 +750,16 @@ export async function syncRoutes(app: FastifyInstance) {
   );
 
   app.get<{ Params: { guildId: string } }>(
+    // Markiert Einträge als ausgeliefert — destruktiv. Vorher genügte ein
+    // beliebiges JWT, womit jeder den Rückkanal einer fremden Gilde leeren
+    // konnte.
     "/guilds/:guildId/sync/pending-entries",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("editor")] },
     async (request) => {
       const { guildId } = request.params;
 
-      const pending = await db
+      // Wie beim Sync: nur lesen. Bestätigt wird über /sync/ack.
+      return db
         .select()
         .from(dkpEntries)
         .where(
@@ -652,27 +769,57 @@ export async function syncRoutes(app: FastifyInstance) {
             isNull(dkpEntries.addonSyncedAt),
           ),
         )
-        .orderBy(dkpEntries.occurredAt);
+        .orderBy(dkpEntries.occurredAt)
+        .limit(PENDING_ENTRY_LIMIT);
+    },
+  );
 
-      if (pending.length > 0) {
-        await db
-          .update(dkpEntries)
-          .set({ addonSyncedAt: new Date() })
-          .where(
-            and(
-              eq(dkpEntries.guildId, guildId),
-              eq(dkpEntries.source, "web"),
-              isNull(dkpEntries.addonSyncedAt),
-            ),
-          );
+  // Zweite Stufe des Rückkanals: erst nach erfolgreicher Verarbeitung
+  // bestätigen. Unbestätigte Einträge werden beim nächsten Sync erneut
+  // ausgeliefert — das Addon erkennt Duplikate ohnehin über die Entry-ID.
+  app.post<{ Params: { guildId: string }; Body: { entryIds?: unknown } }>(
+    "/guilds/:guildId/sync/ack",
+    { onRequest: [app.authenticate] },
+    async (request, reply) => {
+      const { guildId } = request.params;
+      if (!UUID_RE.test(guildId)) {
+        return reply.status(400).send({ error: "Ungültige Gilden-ID" });
       }
 
-      return pending;
+      const { entryIds } = request.body ?? {};
+      if (!Array.isArray(entryIds) || entryIds.length === 0) {
+        return reply.status(400).send({ error: "entryIds (nicht leer) erforderlich" });
+      }
+      if (entryIds.length > PENDING_ENTRY_LIMIT) {
+        return reply.status(400).send({ error: `Höchstens ${PENDING_ENTRY_LIMIT} IDs pro Aufruf` });
+      }
+      const ids = entryIds.filter((id): id is string => typeof id === "string" && UUID_RE.test(id));
+      if (ids.length === 0) {
+        return reply.status(400).send({ error: "Keine gültige UUID in entryIds" });
+      }
+
+      const acked = await db
+        .update(dkpEntries)
+        .set({ addonSyncedAt: new Date() })
+        .where(
+          and(
+            eq(dkpEntries.guildId, guildId),
+            eq(dkpEntries.source, "web"),
+            isNull(dkpEntries.addonSyncedAt),
+            inArray(dkpEntries.id, ids),
+          ),
+        )
+        .returning({ id: dkpEntries.id });
+
+      return { acknowledged: acked.length };
     },
   );
 
   app.get<{ Params: { guildId: string } }>(
+    // Der Roh-Snapshot enthält die komplette DKP-History und die BattleTags aus
+    // dem Versions-Modul — der zugriffsbeschränkteste Endpunkt der API.
     "/guilds/:guildId/sync/latest",
+    { onRequest: [requireRole("admin")] },
     async (request, reply) => {
       const snapshot = await db.query.addonSnapshots.findFirst({
         where: eq(addonSnapshots.guildId, request.params.guildId),

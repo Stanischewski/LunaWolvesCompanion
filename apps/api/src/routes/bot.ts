@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { guildSettings, players, characters, raidEvents, raidSignups } from "../db/schema.js";
+import { guildIdParams, raidIdParams, discordIdParams } from "../lib/schemas.js";
 
 async function requireBotSecret(request: FastifyRequest, reply: FastifyReply) {
   const botSecret = process.env.BOT_SECRET;
@@ -38,11 +39,13 @@ async function doSignup(raidId: string, characterId: string, role: "tank" | "hea
 
 export async function botRoutes(app: FastifyInstance) {
   const guard = { onRequest: [requireBotSecret] };
+  const guildGuard = { ...guard, schema: { params: guildIdParams } };
+  const raidGuard = { ...guard, schema: { params: raidIdParams } };
 
   // GET /bot/guilds/:guildId/settings — raidChannelId + dkpChannelId ohne Rollenprüfung
   app.get<{ Params: { guildId: string } }>(
     "/bot/guilds/:guildId/settings",
-    guard,
+    guildGuard,
     async (request) => {
       const { guildId } = request.params;
       const settings = await db.query.guildSettings.findFirst({
@@ -55,7 +58,7 @@ export async function botRoutes(app: FastifyInstance) {
   // PATCH /bot/guilds/:guildId/dkp-message — DKP-Board-Nachrichten-ID speichern
   app.patch<{ Params: { guildId: string }; Body: { dkpMessageId: string | null } }>(
     "/bot/guilds/:guildId/dkp-message",
-    guard,
+    guildGuard,
     async (request) => {
       const { guildId } = request.params;
       const { dkpMessageId } = request.body;
@@ -73,7 +76,7 @@ export async function botRoutes(app: FastifyInstance) {
   // PATCH /bot/raids/:raidId/calendar-message — Discord-Nachrichten-ID pro Raid speichern
   app.patch<{ Params: { raidId: string }; Body: { calendarMessageId: string | null } }>(
     "/bot/raids/:raidId/calendar-message",
-    guard,
+    raidGuard,
     async (request, reply) => {
       const { raidId } = request.params;
       const { calendarMessageId } = request.body;
@@ -87,12 +90,29 @@ export async function botRoutes(app: FastifyInstance) {
     },
   );
 
+  // GET /bot/players/:discordId/characters — verknüpfte Charaktere eines Discord-Nutzers
+  app.get<{ Params: { discordId: string } }>(
+    "/bot/players/:discordId/characters",
+    { ...guard, schema: { params: discordIdParams } },
+    async (request) => {
+      const player = await db.query.players.findFirst({
+        where: eq(players.discordId, request.params.discordId),
+        columns: { id: true },
+      });
+      if (!player) return [];
+      return db.query.characters.findMany({
+        where: eq(characters.playerId, player.id),
+        columns: { id: true, name: true, realm: true, class: true },
+      });
+    },
+  );
+
   // POST /bot/raids/:raidId/signup — Anmeldung per Discord-ID
   // Gibt { status: "signed_up" | "select_character" | "no_character", ... } zurück
   app.post<{
     Params: { raidId: string };
     Body: { discordId: string; role: "tank" | "heal" | "dps" };
-  }>("/bot/raids/:raidId/signup", guard, async (request, reply) => {
+  }>("/bot/raids/:raidId/signup", raidGuard, async (request, reply) => {
     const { raidId } = request.params;
     const { discordId, role } = request.body;
 
@@ -119,13 +139,35 @@ export async function botRoutes(app: FastifyInstance) {
     return { status: "signed_up", character: playerChars[0] };
   });
 
-  // POST /bot/raids/:raidId/signup-by-char — Anmeldung mit konkreter Charakter-ID
+  // POST /bot/raids/:raidId/signup-by-char — Anmeldung mit konkreter Charakter-ID.
+  // discordId ist Pflicht: der Charakter muss dem anfragenden Discord-Nutzer
+  // gehören, sonst könnte über diese Route jeder fremde Charaktere anmelden.
   app.post<{
     Params: { raidId: string };
-    Body: { characterId: string; role: "tank" | "heal" | "dps" };
-  }>("/bot/raids/:raidId/signup-by-char", guard, async (request) => {
+    Body: { characterId: string; role: "tank" | "heal" | "dps"; discordId: string };
+  }>("/bot/raids/:raidId/signup-by-char", raidGuard, async (request, reply) => {
     const { raidId } = request.params;
-    const { characterId, role } = request.body;
+    const { characterId, role, discordId } = request.body;
+
+    if (!discordId) {
+      return reply.status(400).send({ error: "discordId erforderlich" });
+    }
+
+    const player = await db.query.players.findFirst({
+      where: eq(players.discordId, discordId),
+      columns: { id: true },
+    });
+    if (!player) return reply.status(403).send({ error: "Discord-Konto nicht verknüpft" });
+
+    const char = await db.query.characters.findFirst({
+      where: eq(characters.id, characterId),
+      columns: { playerId: true },
+    });
+    if (!char) return reply.status(404).send({ error: "Charakter nicht gefunden" });
+    if (char.playerId !== player.id) {
+      return reply.status(403).send({ error: "Charakter gehört nicht zu diesem Konto" });
+    }
+
     await doSignup(raidId, characterId, role);
     return { status: "signed_up" };
   });
@@ -134,7 +176,7 @@ export async function botRoutes(app: FastifyInstance) {
   app.post<{
     Params: { raidId: string };
     Body: { discordId: string };
-  }>("/bot/raids/:raidId/unregister", guard, async (request) => {
+  }>("/bot/raids/:raidId/unregister", raidGuard, async (request) => {
     const { raidId } = request.params;
     const { discordId } = request.body;
 

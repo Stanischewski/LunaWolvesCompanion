@@ -104,7 +104,11 @@ export const interactionCreateEvent = {
       const characterId = interaction.values[0];
       await interaction.deferUpdate();
       try {
-        await api.raid.signupBotByChar(raidId, { characterId, role });
+        await api.raid.signupBotByChar(raidId, {
+          characterId,
+          role,
+          discordId: interaction.user.id,
+        });
         await interaction.editReply({
           content: `✅ Als ${ROLE_LABELS[role] ?? role} angemeldet!`,
           components: [],

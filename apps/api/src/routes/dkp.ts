@@ -1,14 +1,19 @@
 import type { FastifyInstance } from "fastify";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, gt } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.js";
 import { characters, dkpEntries, dkpStandings, dkpTombstones, dkpSeasons } from "../db/schema.js";
+import { requireRole } from "../lib/permissions.js";
+import { resolveOfficerName } from "../lib/auth.js";
+import { getSeasonStart } from "../lib/dkpSeason.js";
+import { guildIdParams, guildIdAndPlayerParams } from "../lib/schemas.js";
 
 export async function dkpRoutes(app: FastifyInstance) {
   // ── READ ──────────────────────────────────────────────────────────────────
 
   app.get<{ Params: { guildId: string } }>(
     "/guilds/:guildId/dkp/standings",
+    { onRequest: [app.authenticate], schema: { params: guildIdParams } },
     async (request) => {
       return db.query.dkpStandings.findMany({
         where: eq(dkpStandings.guildId, request.params.guildId),
@@ -19,6 +24,7 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { guildId: string; playerName: string } }>(
     "/guilds/:guildId/dkp/standings/:playerName",
+    { onRequest: [app.authenticate], schema: { params: guildIdAndPlayerParams } },
     async (request, reply) => {
       const standing = await db.query.dkpStandings.findFirst({
         where: and(
@@ -33,13 +39,20 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.get<{
     Params: { guildId: string };
-    Querystring: { player?: string; type?: string; limit?: string; offset?: string };
+    Querystring: { player?: string; type?: string; limit?: string; offset?: string; allSeasons?: string };
   }>(
     "/guilds/:guildId/dkp/history",
+    { onRequest: [app.authenticate], schema: { params: guildIdParams } },
     async (request) => {
-      const { player, type, limit: limitStr, offset: offsetStr } = request.query;
+      const { player, type, limit: limitStr, offset: offsetStr, allSeasons } = request.query;
       const limit = Math.min(Math.max(Number(limitStr) || 50, 1), 200);
       const offset = Math.max(Number(offsetStr) || 0, 0);
+
+      // Standardmäßig die laufende Saison — sonst stünden nach einem Reset
+      // Einträge in der Liste, die in den Standings nicht mehr zählen.
+      // ?allSeasons=1 liefert weiterhin alles.
+      const seasonStart =
+        allSeasons === "1" ? null : await getSeasonStart(db, request.params.guildId);
 
       return db
         .select()
@@ -51,6 +64,7 @@ export async function dkpRoutes(app: FastifyInstance) {
             type
               ? eq(dkpEntries.entryType, type as "manual" | "boss" | "spend" | "correction")
               : undefined,
+            seasonStart ? gt(dkpEntries.occurredAt, seasonStart) : undefined,
           ),
         )
         .orderBy(desc(dkpEntries.occurredAt))
@@ -61,12 +75,14 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { guildId: string } }>(
     "/guilds/:guildId/dkp/seasons",
+    { onRequest: [app.authenticate], schema: { params: guildIdParams } },
     async (request) => {
       return db
         .select({
           id: dkpSeasons.id,
           name: dkpSeasons.name,
           archivedBy: dkpSeasons.archivedBy,
+          startedAt: dkpSeasons.startedAt,
           archivedAt: dkpSeasons.archivedAt,
         })
         .from(dkpSeasons)
@@ -79,10 +95,16 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: { guildId: string };
-    Body: { playerName: string; amount: number; reason?: string; entryType?: "manual" | "boss" | "correction" };
+    Body: {
+      playerName: string;
+      amount: number;
+      reason?: string;
+      entryType?: "manual" | "boss" | "correction";
+      officerName?: string;
+    };
   }>(
     "/guilds/:guildId/dkp/award",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("editor")], schema: { params: guildIdParams } },
     async (request, reply) => {
       const { playerName, amount, reason = "Manuell", entryType = "manual" } = request.body;
       if (!playerName || !(amount > 0)) {
@@ -98,7 +120,7 @@ export async function dkpRoutes(app: FastifyInstance) {
       }
 
       const delta = Math.round(amount);
-      const officerName: string = (request.user as { bnetTag: string }).bnetTag;
+      const officerName = resolveOfficerName(request, request.body?.officerName);
 
       const result = await db.transaction(async (tx) => {
         const [entry] = await tx
@@ -144,10 +166,10 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: { guildId: string };
-    Body: { playerName: string; amount: number; reason?: string };
+    Body: { playerName: string; amount: number; reason?: string; officerName?: string };
   }>(
     "/guilds/:guildId/dkp/spend",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("editor")], schema: { params: guildIdParams } },
     async (request, reply) => {
       const { playerName, amount, reason = "Ausgabe" } = request.body;
       if (!playerName || !(amount > 0)) {
@@ -163,7 +185,7 @@ export async function dkpRoutes(app: FastifyInstance) {
       }
 
       const delta = -Math.round(amount);
-      const officerName: string = (request.user as { bnetTag: string }).bnetTag;
+      const officerName = resolveOfficerName(request, request.body?.officerName);
 
       const result = await db.transaction(async (tx) => {
         const [entry] = await tx
@@ -208,10 +230,10 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: { guildId: string };
-    Body: { playerName: string; amount: number; reason?: string };
+    Body: { playerName: string; amount: number; reason?: string; officerName?: string };
   }>(
     "/guilds/:guildId/dkp/adjust",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("editor")], schema: { params: guildIdParams } },
     async (request, reply) => {
       const { playerName, amount, reason = "Korrektur" } = request.body;
       if (!playerName || amount === undefined || amount === 0) {
@@ -227,7 +249,7 @@ export async function dkpRoutes(app: FastifyInstance) {
       }
 
       const delta = Math.round(amount);
-      const officerName: string = (request.user as { bnetTag: string }).bnetTag;
+      const officerName = resolveOfficerName(request, request.body?.officerName);
 
       const result = await db.transaction(async (tx) => {
         const [entry] = await tx
@@ -270,12 +292,15 @@ export async function dkpRoutes(app: FastifyInstance) {
     },
   );
 
-  app.delete<{ Params: { guildId: string; playerName: string } }>(
+  app.delete<{
+    Params: { guildId: string; playerName: string };
+    Body: { officerName?: string } | undefined;
+  }>(
     "/guilds/:guildId/dkp/players/:playerName",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("admin")], schema: { params: guildIdAndPlayerParams } },
     async (request, reply) => {
       const { guildId, playerName } = request.params;
-      const officerName: string = (request.user as { bnetTag: string }).bnetTag;
+      const officerName = resolveOfficerName(request, request.body?.officerName);
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
@@ -309,15 +334,15 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: { guildId: string };
-    Body: { seasonName?: string };
+    Body: { seasonName?: string; officerName?: string };
   }>(
     "/guilds/:guildId/dkp/reset",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("admin")], schema: { params: guildIdParams } },
     async (request, reply) => {
       const { guildId } = request.params;
       const seasonName =
         request.body?.seasonName ?? `Saison-${new Date().toISOString().slice(0, 10)}`;
-      const officerName: string = (request.user as { bnetTag: string }).bnetTag;
+      const officerName = resolveOfficerName(request, request.body?.officerName);
       const now = new Date();
 
       await db.transaction(async (tx) => {
@@ -326,10 +351,17 @@ export async function dkpRoutes(app: FastifyInstance) {
           where: eq(dkpStandings.guildId, guildId),
         });
 
+        const previousStart = await getSeasonStart(tx, guildId);
+
+        // `archivedAt` ist zugleich die Epoche der Folgesaison: ab hier
+        // zählen die Einträge. Ohne diese Grenze summierte der nächste
+        // Addon-Sync wieder über *alle* Einträge und holte den kompletten
+        // Vor-Reset-Stand zurück, sobald ein Spieler einen neuen Eintrag bekam.
         await tx.insert(dkpSeasons).values({
           guildId,
           name: seasonName,
           archivedBy: officerName,
+          startedAt: previousStart.getTime() === 0 ? null : previousStart,
           archivedAt: now,
           snapshotData: snapshot,
         });
@@ -347,7 +379,12 @@ export async function dkpRoutes(app: FastifyInstance) {
         resetBy: officerName,
       });
 
-      return reply.status(201).send({ seasonName, resetAt: now });
+      return reply.status(201).send({
+        seasonName,
+        resetAt: now,
+        // Epoche für das Addon: Einträge davor zählen nicht mehr.
+        seasonEpoch: Math.floor(now.getTime() / 1000),
+      });
     },
   );
 }

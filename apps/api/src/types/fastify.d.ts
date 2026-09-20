@@ -12,7 +12,12 @@ declare module "@fastify/jwt" {
 declare module "fastify" {
   interface FastifyInstance {
     bnetOAuth2: OAuth2Namespace;
-    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
     io: SocketServer;
+  }
+
+  interface FastifyRequest {
+    /** true, wenn der Request ueber das Bot-Secret authentifiziert wurde. */
+    isBot: boolean;
   }
 }

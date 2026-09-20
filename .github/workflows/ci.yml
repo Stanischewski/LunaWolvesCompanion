@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Laufende Prüfungen abbrechen, wenn neue Commits kommen.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build, Lint und Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: lunawolves_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/lunawolves_ci
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Abhängigkeiten installieren
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Typprüfung
+        run: pnpm run lint
+
+      - name: Tests
+        run: pnpm run test
+
+      # Die Migrationen werden gegen eine leere Datenbank eingespielt. Das
+      # fängt Syntaxfehler und Reihenfolgeprobleme ab, bevor sie beim Deploy
+      # auf die Produktionsdatenbank treffen.
+      - name: Migrationen einspielen
+        working-directory: apps/api
+        run: |
+          psql "$DATABASE_URL" -q -c "CREATE ROLE lw_app LOGIN;"
+          for f in $(ls drizzle/*.sql | sort); do
+            echo "→ $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Schema gegen Migrationen prüfen
+        working-directory: apps/api
+        run: |
+          # Alle in schema.ts definierten Tabellen müssen nach den Migrationen
+          # existieren — sonst fehlt eine Migration.
+          missing=$(psql "$DATABASE_URL" -tAc "
+            SELECT string_agg(t, ', ') FROM unnest(ARRAY[
+              'players','guilds','characters','activity_logs','addon_snapshots',
+              'raid_events','raid_signups','character_equipment','item_icon_cache',
+              'dkp_entries','dkp_standings','dkp_tombstones','guild_settings','dkp_seasons'
+            ]) AS t
+            WHERE NOT EXISTS (
+              SELECT 1 FROM information_schema.tables
+              WHERE table_schema='public' AND table_name=t
+            );")
+          if [ -n "$missing" ]; then
+            echo "::error::Tabellen fehlen nach den Migrationen: $missing"
+            exit 1
+          fi
+          echo "Alle Tabellen vorhanden."
+
+  lua:
+    name: Addon-Syntax
+    runs-on: ubuntu-latest
+    # Das Addon liegt in einem eigenen Repository; dieser Job prüft nur, dass
+    # der Lua-Parser die Beispieldateien weiterhin liest.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @guild/lua-parser run test

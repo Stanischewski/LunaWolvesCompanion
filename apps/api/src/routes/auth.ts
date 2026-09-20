@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db/index.js";
 import { players } from "../db/schema.js";
 import { eq } from "drizzle-orm";
+import { issueCode, redeemCode } from "../lib/authCodes.js";
+import { encryptToken } from "../lib/crypto.js";
 
 interface BnetUserInfo {
   sub: string;
@@ -41,13 +43,22 @@ export async function authRoutes(app: FastifyInstance) {
     if (!player) {
       const [created] = await db
         .insert(players)
-        .values({ bnetId: userinfo.sub, bnetTag: userinfo.battletag, bnetAccessToken, bnetTokenExpiry })
+        .values({
+          bnetId: userinfo.sub,
+          bnetTag: userinfo.battletag,
+          bnetAccessToken: encryptToken(bnetAccessToken),
+          bnetTokenExpiry,
+        })
         .returning();
       player = created;
     } else {
       const [updated] = await db
         .update(players)
-        .set({ bnetTag: userinfo.battletag, bnetAccessToken, bnetTokenExpiry })
+        .set({
+          bnetTag: userinfo.battletag,
+          bnetAccessToken: encryptToken(bnetAccessToken),
+          bnetTokenExpiry,
+        })
         .where(eq(players.bnetId, userinfo.sub))
         .returning();
       player = updated;
@@ -58,20 +69,34 @@ export async function authRoutes(app: FastifyInstance) {
       { expiresIn: "7d" }
     );
 
-    // Desktop-Agent: kam der Flow von /auth/desktop, wird das Token an den
+    // Desktop-Agent: kam der Flow von /auth/desktop, wird das Ergebnis an den
     // lokalen Loopback-Server des Agents weitergeleitet (Host fest 127.0.0.1).
+    //
+    // Unterwegs ist nur ein Einmal-Code, kein JWT: der Code ist 60 Sekunden
+    // gültig, genau einmal einlösbar und liegt serverseitig nur als Hash.
+    // Der `state`-Nonce bindet die Rückleitung an genau die Anmeldung, die der
+    // Agent gestartet hat — ohne ihn könnte ein lokaler Prozess, der die Ports
+    // durchprobiert, dem Agent ein fremdes Token unterschieben.
     const desktopPort = request.cookies.desktop_port;
+    const desktopState = request.cookies.desktop_state;
     if (desktopPort) {
       reply.clearCookie("desktop_port", { path: "/" });
+      reply.clearCookie("desktop_state", { path: "/" });
       const port = Number(desktopPort);
-      if (Number.isInteger(port) && port >= 1024 && port <= 65535) {
-        return reply.redirect(`http://127.0.0.1:${port}/?token=${jwt}`);
+      if (Number.isInteger(port) && port >= 1024 && port <= 65535 && desktopState) {
+        const code = issueCode(jwt);
+        return reply.redirect(
+          `http://127.0.0.1:${port}/?code=${encodeURIComponent(code)}` +
+            `&state=${encodeURIComponent(desktopState)}`,
+        );
       }
+      return reply.status(400).send({ error: "Ungueltige Desktop-Anmeldung" });
     }
 
     const frontendUrl = process.env.FRONTEND_URL;
     if (frontendUrl) {
-      return reply.redirect(`${frontendUrl}/auth/callback?token=${jwt}`);
+      const code = issueCode(jwt);
+      return reply.redirect(`${frontendUrl}/auth/callback?code=${encodeURIComponent(code)}`);
     }
 
     reply.setCookie("token", jwt, {
@@ -87,19 +112,45 @@ export async function authRoutes(app: FastifyInstance) {
 
   // Startpunkt fuer den Desktop-Agent: merkt sich den Loopback-Port in einem
   // Cookie und startet dann den normalen Battle.net-OAuth-Flow.
-  app.get<{ Querystring: { port?: string } }>("/auth/desktop", async (request, reply) => {
-    const port = Number(request.query.port);
-    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-      return reply.status(400).send({ error: "Ungueltiger Port" });
+  app.get<{ Querystring: { port?: string; state?: string } }>(
+    "/auth/desktop",
+    async (request, reply) => {
+      const port = Number(request.query.port);
+      if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+        return reply.status(400).send({ error: "Ungueltiger Port" });
+      }
+
+      // Der Agent erzeugt den state-Nonce und vergleicht ihn beim Rücklauf.
+      const state = request.query.state;
+      if (typeof state !== "string" || state.length < 16 || state.length > 128) {
+        return reply.status(400).send({ error: "Ungueltiger state-Parameter" });
+      }
+
+      const cookieOpts = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax" as const,
+        path: "/",
+        maxAge: 600,
+      };
+      reply.setCookie("desktop_port", String(port), cookieOpts);
+      reply.setCookie("desktop_state", state, cookieOpts);
+      return reply.redirect("/auth/bnet");
+    },
+  );
+
+  // Tauscht einen Einmal-Code gegen das JWT. Bewusst POST: Query-Parameter
+  // landen in Logs und Verläufen, ein Request-Body nicht.
+  app.post<{ Body: { code?: unknown } }>("/auth/exchange", async (request, reply) => {
+    const { code } = request.body ?? {};
+    if (typeof code !== "string" || !code) {
+      return reply.status(400).send({ error: "code erforderlich" });
     }
-    reply.setCookie("desktop_port", String(port), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 600,
-    });
-    return reply.redirect("/auth/bnet");
+    const token = redeemCode(code);
+    if (!token) {
+      return reply.status(400).send({ error: "Code ungültig oder abgelaufen" });
+    }
+    return { token };
   });
 
   app.get("/auth/me", { onRequest: [app.authenticate] }, async (request) => {
@@ -110,7 +161,13 @@ export async function authRoutes(app: FastifyInstance) {
 
   // Initiates the Discord OAuth flow for an already-logged-in player.
   // The JWT is passed as a query param from the web proxy route.
-  app.get<{ Querystring: { token?: string } }>("/auth/discord/link", async (request, reply) => {
+  // Stellt ein kurzlebiges Ticket für den Discord-Link aus. Der Aufruf kommt
+  // vom Web-Server (mit Authorization-Header), nicht aus dem Browser.
+  app.post("/auth/discord/ticket", { onRequest: [app.authenticate] }, async (request) => {
+    return { ticket: issueCode(request.user.sub) };
+  });
+
+  app.get<{ Querystring: { ticket?: string } }>("/auth/discord/link", async (request, reply) => {
     const clientId = process.env.DISCORD_CLIENT_ID;
     const callbackUrl = process.env.DISCORD_CALLBACK_URL ?? "http://localhost:3001/auth/discord/callback";
 
@@ -118,15 +175,14 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(501).send({ error: "Discord OAuth nicht konfiguriert" });
     }
 
-    const { token } = request.query;
-    if (!token) return reply.status(400).send({ error: "Kein Token" });
+    // Früher stand hier das komplette JWT als Query-Parameter — und damit im
+    // Klartext in den Fastify-Logs, weil `logger: true` req.url protokolliert.
+    const { ticket } = request.query;
+    if (!ticket) return reply.status(400).send({ error: "Kein Ticket" });
 
-    let playerId: string;
-    try {
-      const decoded = app.jwt.verify<{ sub: string }>(token);
-      playerId = decoded.sub;
-    } catch {
-      return reply.status(401).send({ error: "Ungültiger Token" });
+    const playerId = redeemCode(ticket);
+    if (!playerId) {
+      return reply.status(401).send({ error: "Ticket ungültig oder abgelaufen" });
     }
 
     reply.setCookie("discord_link_player", playerId, {

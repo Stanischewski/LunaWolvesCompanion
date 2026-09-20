@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { apiFetch } from "@/lib/api";
 import { LiveFeed } from "./components/LiveFeed";
 import { DisplayNameTile } from "./DisplayNameTile";
@@ -58,6 +59,10 @@ export default async function DashboardPage() {
   } catch {}
 
   const guildId = player?.characters.find((c) => c.guild)?.guild?.id ?? null;
+
+  // Der WebSocket-Handshake prüft das JWT. Das Cookie ist httpOnly, also muss
+  // der Server den Wert an die Client-Komponente durchreichen.
+  const wsToken = (await cookies()).get("auth-token")?.value ?? "";
 
   const guildChars = player?.characters.filter((c) => c.guild) ?? [];
   const bestChar = player?.characters.reduce<Character | null>(
@@ -170,7 +175,7 @@ export default async function DashboardPage() {
             )}
           </div>
 
-          {guildId && <LiveFeed guildId={guildId} />}
+          {guildId && <LiveFeed guildId={guildId} wsToken={wsToken} />}
         </div>
       ) : (
         <p className="text-zinc-500">Fehler beim Laden des Profils.</p>

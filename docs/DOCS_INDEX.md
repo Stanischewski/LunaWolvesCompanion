@@ -27,3 +27,17 @@
 |--------------------|------|
 | Deutsch | [de/SIMC_Integrationsplan.md](de/SIMC_Integrationsplan.md) |
 | English | — (coming soon) |
+
+## Code-Review
+
+| Sprache / Language | Link |
+|--------------------|------|
+| Deutsch | [de/Code_Review_2026-09.md](de/Code_Review_2026-09.md) |
+| English | — (coming soon) |
+
+## Feature-Roadmap
+
+| Sprache / Language | Link |
+|--------------------|------|
+| Deutsch | [de/Feature_Roadmap_Integrationsplan.md](de/Feature_Roadmap_Integrationsplan.md) |
+| English | — (coming soon) |

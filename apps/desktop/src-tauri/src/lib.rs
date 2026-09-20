@@ -20,10 +20,42 @@ use tiny_http::{Header, Response, Server};
 
 // ===================== Konfiguration =====================
 
+/// Schluesselbund-Eintrag fuer das JWT.
+const KEYRING_SERVICE: &str = "LunaWolvesCompanion";
+const KEYRING_USER: &str = "api-token";
+
+/// Liest das Token aus dem Schluesselbund des Betriebssystems.
+fn keyring_get() -> Option<String> {
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+        .ok()?
+        .get_password()
+        .ok()
+        .filter(|t| !t.is_empty())
+}
+
+/// Legt das Token im Schluesselbund ab (leerer Wert loescht den Eintrag).
+fn keyring_set(token: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+        .map_err(|e| format!("Schluesselbund nicht verfuegbar: {e}"))?;
+    if token.is_empty() {
+        // Ein fehlender Eintrag ist kein Fehler.
+        let _ = entry.delete_credential();
+        return Ok(());
+    }
+    entry
+        .set_password(token)
+        .map_err(|e| format!("Token konnte nicht gespeichert werden: {e}"))
+}
+
 /// Vom Nutzer gesetzte Einstellungen. Wird als JSON im App-Konfigordner abgelegt.
+///
+/// Das Token steht NICHT mehr hier drin: es lag zuvor im Klartext in
+/// config.json mit Standard-Dateirechten. Es liegt jetzt im Schluesselbund des
+/// Betriebssystems; das Feld bleibt nur fuer die Uebernahme alter Dateien.
 #[derive(Clone, Default, Serialize, Deserialize)]
 struct Config {
     api_url: String,
+    #[serde(default, skip_serializing)]
     token: String,
     saved_variables_path: String,
     /// Unix-Timestamp des neuesten DKP-Eintrags aus dem letzten erfolgreichen Sync.
@@ -47,11 +79,25 @@ fn config_file_path(app: &AppHandle) -> Option<PathBuf> {
 }
 
 /// Laedt die Konfiguration von der Platte; fehlt sie, gibt es leere Defaults.
+///
+/// Steht in einer alten config.json noch ein Token im Klartext, wandert es
+/// einmalig in den Schluesselbund und wird beim naechsten Speichern aus der
+/// Datei entfernt (`skip_serializing`).
 fn load_config(app: &AppHandle) -> Config {
-    config_file_path(app)
+    let mut config: Config = config_file_path(app)
         .and_then(|path| std::fs::read_to_string(path).ok())
         .and_then(|text| serde_json::from_str::<Config>(&text).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    if !config.token.is_empty() {
+        if keyring_set(&config.token).is_ok() {
+            let _ = save_config_to_disk(app, &config);
+        }
+    } else if let Some(token) = keyring_get() {
+        config.token = token;
+    }
+
+    config
 }
 
 /// Schreibt die Konfiguration als JSON auf die Platte.
@@ -226,12 +272,66 @@ fn spawn_watcher(app: AppHandle) {
 
 // ===================== Battle.net-Login (Loopback-OAuth) =====================
 
-/// Extrahiert den Wert des `token`-Query-Parameters aus einer URL wie "/?token=…".
-fn extract_token(url: &str) -> Option<String> {
+/// Extrahiert einen Query-Parameter aus einer URL wie "/?code=…&state=…".
+fn extract_param(url: &str, key: &str) -> Option<String> {
     let query = url.split('?').nth(1)?;
-    query
+    let prefix = format!("{key}=");
+    let raw = query
         .split('&')
-        .find_map(|pair| pair.strip_prefix("token=").map(str::to_string))
+        .find_map(|pair| pair.strip_prefix(prefix.as_str()).map(str::to_string))?;
+    Some(percent_decode(&raw))
+}
+
+/// Minimale Prozent-Dekodierung — die API kodiert Code und state mit
+/// `encodeURIComponent`.
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&input[i + 1..i + 3], 16) {
+                out.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(if bytes[i] == b'+' { b' ' } else { bytes[i] });
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Zeitkonstanter Vergleich — der `state`-Nonce entscheidet ueber die
+/// Annahme einer Anmeldung.
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// Tauscht den Einmal-Code der API gegen das JWT.
+fn exchange_code(api_url: &str, code: &str) -> Result<String, String> {
+    let url = format!("{}/auth/exchange", api_url.trim_end_matches('/'));
+    let res = reqwest::blocking::Client::new()
+        .post(url)
+        .json(&serde_json::json!({ "code": code }))
+        .send()
+        .map_err(|e| format!("Code-Tausch fehlgeschlagen: {e}"))?;
+
+    if !res.status().is_success() {
+        return Err(format!("Code-Tausch abgelehnt: HTTP {}", res.status()));
+    }
+
+    let body: serde_json::Value = res
+        .json()
+        .map_err(|e| format!("Antwort nicht lesbar: {e}"))?;
+    body["token"]
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| "Antwort enthielt kein Token.".to_string())
 }
 
 /// Fuehrt den Login durch: startet einen lokalen Loopback-HTTP-Server, oeffnet
@@ -246,9 +346,29 @@ fn run_login_flow(app: &AppHandle, api_url: &str) -> Result<String, String> {
         .ok_or("Server-Adresse unbekannt")?
         .port();
 
+    // state-Nonce: bindet die Rueckleitung an genau diese Anmeldung.
+    // Ohne ihn nahm der Loopback-Server die ERSTE beliebige Anfrage mit einem
+    // token-Parameter an — ein lokaler Prozess, der die Ports durchprobiert,
+    // konnte dem Agent damit ein fremdes Token unterschieben.
+    let state: String = {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        (0..32)
+            .map(|_| {
+                const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+                CHARS[rng.gen_range(0..CHARS.len())] as char
+            })
+            .collect()
+    };
+
     // Browser auf die API schicken — der Port sagt der API, wohin sie das
-    // fertige Token zurueckleiten soll.
-    let auth_url = format!("{}/auth/desktop?port={}", api_url.trim_end_matches('/'), port);
+    // Ergebnis zurueckleiten soll.
+    let auth_url = format!(
+        "{}/auth/desktop?port={}&state={}",
+        api_url.trim_end_matches('/'),
+        port,
+        state
+    );
     app.opener()
         .open_url(auth_url, None::<&str>)
         .map_err(|e| format!("Browser konnte nicht geoeffnet werden: {e}"))?;
@@ -259,10 +379,21 @@ fn run_login_flow(app: &AppHandle, api_url: &str) -> Result<String, String> {
         .map_err(|e| format!("Fehler beim Warten auf die Anmeldung: {e}"))?
         .ok_or("Zeitueberschreitung — keine Anmeldung empfangen.")?;
 
-    let token = extract_token(request.url());
+    // Nur annehmen, wenn der state stimmt. Unterwegs war ohnehin kein Token
+    // mehr, sondern ein Einmal-Code mit 60 Sekunden Gueltigkeit.
+    let returned_state = extract_param(request.url(), "state");
+    let state_ok = returned_state
+        .as_deref()
+        .map(|s| constant_time_eq(s, &state))
+        .unwrap_or(false);
+    let code = if state_ok {
+        extract_param(request.url(), "code")
+    } else {
+        None
+    };
 
     // Dem Browser eine Abschlussseite zeigen.
-    let page = if token.is_some() {
+    let page = if code.is_some() {
         "<!doctype html><meta charset=utf-8><title>Luna Wolves Agent</title>\
          <body style='font-family:sans-serif;background:#09090b;color:#e4e4e7;padding:48px'>\
          <h2>Anmeldung erfolgreich</h2><p>Du kannst dieses Fenster schliessen.</p></body>"
@@ -273,9 +404,16 @@ fn run_login_flow(app: &AppHandle, api_url: &str) -> Result<String, String> {
     };
     let header = Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..])
         .expect("gueltiger Header");
-    let _ = request.respond(Response::from_string(page).with_header(header));
+    // no-store, damit der Code nicht im Browser-Cache landet.
+    let cache = Header::from_bytes(&b"Cache-Control"[..], &b"no-store"[..])
+        .expect("gueltiger Header");
+    let _ = request.respond(Response::from_string(page).with_header(header).with_header(cache));
 
-    token.ok_or_else(|| "Es wurde kein Token zurueckgeleitet.".to_string())
+    if !state_ok {
+        return Err("Anmeldung abgelehnt: state stimmte nicht überein.".to_string());
+    }
+    let code = code.ok_or_else(|| "Es wurde kein Code zurueckgeleitet.".to_string())?;
+    exchange_code(api_url, &code)
 }
 
 // ===================== WoW-Pfad-Erkennung =====================
@@ -539,8 +677,8 @@ fn start_login(app: AppHandle, state: State<AppState>) {
                 let saved = {
                     let state = app.state::<AppState>();
                     let mut config = state.config.lock().unwrap();
-                    config.token = token;
-                    save_config_to_disk(&app, &config)
+                    config.token = token.clone();
+                    keyring_set(&token).and_then(|()| save_config_to_disk(&app, &config))
                 };
                 match saved {
                     Ok(()) => {
@@ -562,6 +700,7 @@ fn start_login(app: AppHandle, state: State<AppState>) {
 fn logout(app: AppHandle, state: State<AppState>) -> Result<(), String> {
     let mut config = state.config.lock().unwrap();
     config.token = String::new();
+    keyring_set("")?;
     save_config_to_disk(&app, &config)?;
     let _ = app.emit("login-changed", false);
     Ok(())

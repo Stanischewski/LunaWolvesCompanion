@@ -1,5 +1,6 @@
 import "dotenv/config";
 import Fastify from "fastify";
+import type { FastifyRequest, FastifyReply } from "fastify";
 import fastifyOAuth2 from "@fastify/oauth2";
 import fastifyJwt from "@fastify/jwt";
 import fastifyCookie from "@fastify/cookie";
@@ -15,10 +16,37 @@ import { settingsRoutes } from "./routes/settings.js";
 import { botRoutes } from "./routes/bot.js";
 import { classIconRoutes } from "./routes/classIcons.js";
 import { setupSocketHandlers } from "./ws/socket.js";
+import { isBotRequest, markBotRequest } from "./lib/auth.js";
+import { initCache, cacheStatus } from "./lib/cache.js";
 import { enrichMPlusScores } from "./jobs/raiderio.js";
 import { syncEquipment } from "./jobs/equipment.js";
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: {
+    // Fastify protokolliert standardmäßig req.url. Dort können Einmal-Codes
+    // und Tickets stehen; Authorization- und Cookie-Header sowieso.
+    redact: {
+      paths: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        'req.headers["x-bot-secret"]',
+        'res.headers.location',
+      ],
+      censor: "[redigiert]",
+    },
+    serializers: {
+      req(request) {
+        // Query-Strings abschneiden — der Pfad genügt zur Fehlersuche.
+        const url = typeof request.url === "string" ? request.url.split("?")[0] : request.url;
+        return {
+          method: request.method,
+          url,
+          remoteAddress: request.socket?.remoteAddress,
+        };
+      },
+    },
+  },
+});
 
 const io = new SocketServer(app.server, {
   cors: {
@@ -28,7 +56,6 @@ const io = new SocketServer(app.server, {
   path: "/ws",
 });
 app.decorate("io", io);
-setupSocketHandlers(io, app.log);
 
 await app.register(fastifyCookie);
 
@@ -36,6 +63,9 @@ await app.register(fastifyJwt, {
   secret: process.env.JWT_SECRET ?? "dev-secret-change-me",
   cookie: { cookieName: "token", signed: false },
 });
+
+// Erst jetzt, weil der Handshake app.jwt braucht.
+setupSocketHandlers(io, app.log, app);
 
 const region = process.env.BNET_REGION ?? "eu";
 
@@ -58,20 +88,28 @@ await app.register(fastifyOAuth2, {
   callbackUri: process.env.BNET_CALLBACK_URL ?? "http://localhost:3001/auth/bnet/callback",
 });
 
-app.decorate("authenticate", async function (request: any, reply: any) {
-  const botSecret = process.env.BOT_SECRET;
-  if (botSecret && request.headers["x-bot-secret"] === botSecret) {
+// `isBot` muss auf jedem Request existieren, bevor ein Handler es liest —
+// decorateRequest legt die Eigenschaft einmalig auf dem Prototyp an.
+app.decorateRequest("isBot", false);
+
+app.decorate("authenticate", async function (request: FastifyRequest, reply: FastifyReply) {
+  if (isBotRequest(request)) {
+    // Der Bot hat kein JWT. Ohne gesetztes request.user laeuft jeder Handler,
+    // der request.user.bnetTag liest, in einen TypeError (HTTP 500).
+    markBotRequest(request);
     return;
   }
   try {
     await request.jwtVerify();
   } catch {
-    reply.status(401).send({ error: "Nicht authentifiziert" });
+    return reply.status(401).send({ error: "Nicht authentifiziert" });
   }
 });
 
+await initCache(app.log);
+
 app.get("/api/v1/health", async () => {
-  return { status: "ok", timestamp: new Date().toISOString() };
+  return { status: "ok", timestamp: new Date().toISOString(), cache: cacheStatus().backend };
 });
 
 await app.register(authRoutes);

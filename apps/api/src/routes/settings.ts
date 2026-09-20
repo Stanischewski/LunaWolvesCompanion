@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { guildSettings } from "../db/schema.js";
 import { requireRole } from "../lib/permissions.js";
+import { guildIdParams } from "../lib/schemas.js";
 
 interface SettingsBody {
   raidChannelId?: string | null;
@@ -14,7 +15,7 @@ interface SettingsBody {
 export async function settingsRoutes(app: FastifyInstance) {
   app.get<{ Params: { guildId: string } }>(
     "/guilds/:guildId/settings",
-    { onRequest: [requireRole("admin")] },
+    { onRequest: [requireRole("admin")], schema: { params: guildIdParams } },
     async (request) => {
       const { guildId } = request.params;
       const settings = await db.query.guildSettings.findFirst({
@@ -26,7 +27,7 @@ export async function settingsRoutes(app: FastifyInstance) {
 
   app.put<{ Params: { guildId: string }; Body: SettingsBody }>(
     "/guilds/:guildId/settings",
-    { onRequest: [requireRole("admin")] },
+    { onRequest: [requireRole("admin")], schema: { params: guildIdParams } },
     async (request) => {
       const { guildId } = request.params;
       const { raidChannelId, dkpChannelId, adminRoleIds, editorRoleIds } = request.body;

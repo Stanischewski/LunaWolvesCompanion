@@ -10,6 +10,7 @@ import {
   jsonb,
   primaryKey,
   unique,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const factionEnum = pgEnum("faction", ["alliance", "horde"]);
@@ -61,7 +62,17 @@ export const characters = pgTable("characters", {
   mPlusScore: integer("m_plus_score").notNull().default(0),
   lastLogin: timestamp("last_login", { withTimezone: true }),
   guildRank: integer("guild_rank").notNull().default(0),
-});
+  /**
+   * Gesetzt, sobald ein Charakter in einem vollstaendigen Roster-Snapshot fehlt.
+   * Bewusst kein Loeschen: die DKP-History und vergangene Raid-Anmeldungen
+   * sollen erhalten bleiben. Wird geleert, wenn der Charakter wieder auftaucht.
+   */
+  leftGuildAt: timestamp("left_guild_at", { withTimezone: true }),
+}, (t) => [
+  index("characters_guild_name_realm").on(t.guildId, t.name, t.realm),
+  index("characters_player").on(t.playerId),
+  index("characters_guild_active").on(t.guildId, t.leftGuildAt),
+]);
 
 export const activityLogs = pgTable("activity_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -72,7 +83,9 @@ export const activityLogs = pgTable("activity_logs", {
   eventData: jsonb("event_data"),
   recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
   source: activitySourceEnum("source").notNull(),
-});
+}, (t) => [
+  index("activity_logs_char_time").on(t.characterId, t.recordedAt.desc()),
+]);
 
 export const addonSnapshots = pgTable("addon_snapshots", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -84,7 +97,9 @@ export const addonSnapshots = pgTable("addon_snapshots", {
     .references(() => players.id),
   rawData: jsonb("raw_data").notNull(),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("addon_snapshots_guild_time").on(t.guildId, t.uploadedAt.desc()),
+]);
 
 export const raidEvents = pgTable("raid_events", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -97,7 +112,9 @@ export const raidEvents = pgTable("raid_events", {
   raidType: varchar("raid_type", { length: 64 }),
   minIlvl: integer("min_ilvl"),
   calendarMessageId: varchar("calendar_message_id", { length: 32 }),
-});
+}, (t) => [
+  index("raid_events_guild_time").on(t.guildId, t.scheduledAt),
+]);
 
 export const raidSignups = pgTable(
   "raid_signups",
@@ -111,7 +128,10 @@ export const raidSignups = pgTable(
     role: raidRoleEnum("role").notNull(),
     status: signupStatusEnum("status").notNull().default("yes"),
   },
-  (t) => [primaryKey({ columns: [t.raidEventId, t.characterId] })],
+  (t) => [
+    primaryKey({ columns: [t.raidEventId, t.characterId] }),
+    index("raid_signups_character").on(t.characterId),
+  ],
 );
 
 export const characterEquipment = pgTable(
@@ -173,7 +193,13 @@ export const dkpEntries = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     addonSyncedAt: timestamp("addon_synced_at", { withTimezone: true }),
   },
-  (t) => [unique("dkp_entries_guild_addon_id").on(t.guildId, t.addonEntryId)],
+  (t) => [
+    unique("dkp_entries_guild_addon_id").on(t.guildId, t.addonEntryId),
+    index("dkp_entries_guild_player_time").on(t.guildId, t.playerName, t.occurredAt),
+    index("dkp_entries_guild_time").on(t.guildId, t.occurredAt.desc()),
+    // Rueckkanal: offene Web-Eintraege fuer das Addon
+    index("dkp_entries_pending").on(t.guildId, t.source, t.addonSyncedAt),
+  ],
 );
 
 export const dkpStandings = pgTable(
@@ -225,6 +251,11 @@ export const dkpSeasons = pgTable("dkp_seasons", {
     .references(() => guilds.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 128 }).notNull(),
   archivedBy: varchar("archived_by", { length: 64 }).notNull(),
+  /** Beginn der Saison = archivedAt der Vorgaengersaison (null bei der ersten). */
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  /** Ende der Saison. Zugleich die Epoche, ab der die Folgesaison zaehlt. */
   archivedAt: timestamp("archived_at", { withTimezone: true }).notNull(),
   snapshotData: jsonb("snapshot_data").notNull(),
-});
+}, (t) => [
+  index("dkp_seasons_guild_time").on(t.guildId, t.archivedAt.desc()),
+]);
