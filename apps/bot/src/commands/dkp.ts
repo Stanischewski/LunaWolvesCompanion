@@ -5,14 +5,24 @@ import { config } from "../config.js";
 import { dkpStandingsEmbed, dkpPlayerEmbed, dkpHistoryEmbed } from "../embeds.js";
 import type { Command } from "./index.js";
 
+// Fail closed: Ist OFFICER_ROLE_IDS nicht gesetzt, darf niemand DKP buchen.
+// Eine fehlende Konfiguration darf nie in mehr Rechte muenden.
 function isOfficer(interaction: ChatInputCommandInteraction): boolean {
   const roleIds = config.officerRoleIds;
-  if (roleIds.length === 0) return true;
+  if (roleIds.length === 0) {
+    console.warn("[DKP] OFFICER_ROLE_IDS ist nicht gesetzt — DKP-Buchungen sind gesperrt.");
+    return false;
+  }
   const roles = interaction.member?.roles;
   if (!roles) return false;
   if (Array.isArray(roles)) return roleIds.some((id) => roles.includes(id));
   if ("cache" in roles) return roleIds.some((id) => roles.cache.has(id));
   return false;
+}
+
+/** Name des ausfuehrenden Officers fuer das DKP-Protokoll. */
+function officerLabel(interaction: ChatInputCommandInteraction): string {
+  return interaction.user.displayName;
 }
 
 export const dkpCommand: Command = {
@@ -102,7 +112,7 @@ export const dkpCommand: Command = {
         const player = interaction.options.getString("player", true);
         const amount = interaction.options.getInteger("amount", true);
         const reason = interaction.options.getString("reason") ?? "Discord Award";
-        await api.dkp.award(player, amount, reason);
+        await api.dkp.award(player, amount, reason, officerLabel(interaction));
         await interaction.editReply({
           content: `✅ **${player}** hat **+${amount} DKP** erhalten. Grund: ${reason}`,
         });
@@ -114,7 +124,7 @@ export const dkpCommand: Command = {
         const player = interaction.options.getString("player", true);
         const amount = interaction.options.getInteger("amount", true);
         const reason = interaction.options.getString("reason") ?? "Discord Spend";
-        await api.dkp.spend(player, amount, reason);
+        await api.dkp.spend(player, amount, reason, officerLabel(interaction));
         await interaction.editReply({
           content: `✅ **${player}** hat **-${amount} DKP** ausgegeben. Grund: ${reason}`,
         });

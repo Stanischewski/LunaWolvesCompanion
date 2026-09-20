@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from "fastify";
 import { db } from "../db/index.js";
 import { players, guilds, guildSettings } from "../db/schema.js";
 import { eq } from "drizzle-orm";
+import { isBotRequest, markBotRequest } from "./auth.js";
 
 interface RoleCacheEntry {
   roles: string[];
@@ -10,6 +11,31 @@ interface RoleCacheEntry {
 
 const roleCache = new Map<string, RoleCacheEntry>();
 const CACHE_TTL = 5 * 60 * 1000;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Die Gilde, gegen die Rollen aufgeloest werden.
+ *
+ * Bevorzugt die Gilde aus der Route (`/guilds/:guildId/...`) — sonst wuerden
+ * Rechte in einer Multi-Gilden-Installation immer an der primaeren Gilde
+ * haengen, auch wenn die Route eine andere meint. Fallback bleibt wie bisher
+ * die primaere Gilde, damit Routen ohne guildId-Parameter weiter funktionieren.
+ */
+async function resolveGuildForRoles(request: FastifyRequest) {
+  const params = request.params as { guildId?: string; id?: string } | undefined;
+  const routeGuildId = params?.guildId ?? params?.id;
+
+  if (routeGuildId && UUID_RE.test(routeGuildId)) {
+    const guild = await db.query.guilds.findFirst({ where: eq(guilds.id, routeGuildId) });
+    if (guild) return guild;
+  }
+
+  return (
+    (await db.query.guilds.findFirst({ where: eq(guilds.isPrimary, true) })) ??
+    (await db.query.guilds.findFirst())
+  );
+}
 
 async function getDiscordMemberRoles(discordId: string): Promise<string[]> {
   const cached = roleCache.get(discordId);
@@ -34,6 +60,13 @@ async function getDiscordMemberRoles(discordId: string): Promise<string[]> {
 
 export function requireRole(role: "admin" | "editor") {
   return async (request: FastifyRequest, reply: FastifyReply) => {
+    // Der Discord-Bot prueft die Officer-Rolle bereits selbst (commands/dkp.ts)
+    // und authentifiziert sich mit dem Bot-Secret. Ein JWT hat er nicht.
+    if (isBotRequest(request)) {
+      markBotRequest(request);
+      return;
+    }
+
     try {
       await request.jwtVerify();
     } catch {
@@ -50,9 +83,7 @@ export function requireRole(role: "admin" | "editor") {
       return reply.status(403).send({ error: "Discord-Konto muss verknüpft sein" });
     }
 
-    const guild =
-      (await db.query.guilds.findFirst({ where: eq(guilds.isPrimary, true) })) ??
-      (await db.query.guilds.findFirst());
+    const guild = await resolveGuildForRoles(request);
     if (!guild) return reply.status(403).send({ error: "Keine Gilde konfiguriert" });
 
     const settings = await db.query.guildSettings.findFirst({
@@ -66,9 +97,22 @@ export function requireRole(role: "admin" | "editor") {
     ];
     const editorRoles = settings?.editorRoleIds ?? [];
 
-    const memberRoles = await getDiscordMemberRoles(player.discordId);
-
     const allowedRoles = role === "admin" ? adminRoles : [...adminRoles, ...editorRoles];
+
+    // Ohne konfigurierte Rollen kann niemand die Pruefung bestehen. Das ist
+    // richtig so (fail closed), muss aber erkennbar sein — sonst sucht der
+    // Admin den Fehler bei seinem Discord-Konto statt in der Konfiguration.
+    if (allowedRoles.length === 0) {
+      request.log.warn(
+        `[Permissions] Gilde ${guild.id} hat keine ${role}-Rollen konfiguriert — Zugriff verweigert.`,
+      );
+      return reply.status(403).send({
+        error:
+          "Keine Rollen konfiguriert. ADMIN_DISCORD_ROLE_ID setzen oder Rollen unter Einstellungen hinterlegen.",
+      });
+    }
+
+    const memberRoles = await getDiscordMemberRoles(player.discordId);
     const hasAccess = memberRoles.some((r) => allowedRoles.includes(r));
 
     if (!hasAccess) {

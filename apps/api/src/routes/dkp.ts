@@ -3,6 +3,8 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.js";
 import { characters, dkpEntries, dkpStandings, dkpTombstones, dkpSeasons } from "../db/schema.js";
+import { requireRole } from "../lib/permissions.js";
+import { resolveOfficerName } from "../lib/auth.js";
 
 export async function dkpRoutes(app: FastifyInstance) {
   // ── READ ──────────────────────────────────────────────────────────────────
@@ -79,10 +81,16 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: { guildId: string };
-    Body: { playerName: string; amount: number; reason?: string; entryType?: "manual" | "boss" | "correction" };
+    Body: {
+      playerName: string;
+      amount: number;
+      reason?: string;
+      entryType?: "manual" | "boss" | "correction";
+      officerName?: string;
+    };
   }>(
     "/guilds/:guildId/dkp/award",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("editor")] },
     async (request, reply) => {
       const { playerName, amount, reason = "Manuell", entryType = "manual" } = request.body;
       if (!playerName || !(amount > 0)) {
@@ -98,7 +106,7 @@ export async function dkpRoutes(app: FastifyInstance) {
       }
 
       const delta = Math.round(amount);
-      const officerName: string = (request.user as { bnetTag: string }).bnetTag;
+      const officerName = resolveOfficerName(request, request.body?.officerName);
 
       const result = await db.transaction(async (tx) => {
         const [entry] = await tx
@@ -144,10 +152,10 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: { guildId: string };
-    Body: { playerName: string; amount: number; reason?: string };
+    Body: { playerName: string; amount: number; reason?: string; officerName?: string };
   }>(
     "/guilds/:guildId/dkp/spend",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("editor")] },
     async (request, reply) => {
       const { playerName, amount, reason = "Ausgabe" } = request.body;
       if (!playerName || !(amount > 0)) {
@@ -163,7 +171,7 @@ export async function dkpRoutes(app: FastifyInstance) {
       }
 
       const delta = -Math.round(amount);
-      const officerName: string = (request.user as { bnetTag: string }).bnetTag;
+      const officerName = resolveOfficerName(request, request.body?.officerName);
 
       const result = await db.transaction(async (tx) => {
         const [entry] = await tx
@@ -208,10 +216,10 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: { guildId: string };
-    Body: { playerName: string; amount: number; reason?: string };
+    Body: { playerName: string; amount: number; reason?: string; officerName?: string };
   }>(
     "/guilds/:guildId/dkp/adjust",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("editor")] },
     async (request, reply) => {
       const { playerName, amount, reason = "Korrektur" } = request.body;
       if (!playerName || amount === undefined || amount === 0) {
@@ -227,7 +235,7 @@ export async function dkpRoutes(app: FastifyInstance) {
       }
 
       const delta = Math.round(amount);
-      const officerName: string = (request.user as { bnetTag: string }).bnetTag;
+      const officerName = resolveOfficerName(request, request.body?.officerName);
 
       const result = await db.transaction(async (tx) => {
         const [entry] = await tx
@@ -270,12 +278,15 @@ export async function dkpRoutes(app: FastifyInstance) {
     },
   );
 
-  app.delete<{ Params: { guildId: string; playerName: string } }>(
+  app.delete<{
+    Params: { guildId: string; playerName: string };
+    Body: { officerName?: string } | undefined;
+  }>(
     "/guilds/:guildId/dkp/players/:playerName",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("admin")] },
     async (request, reply) => {
       const { guildId, playerName } = request.params;
-      const officerName: string = (request.user as { bnetTag: string }).bnetTag;
+      const officerName = resolveOfficerName(request, request.body?.officerName);
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
@@ -309,15 +320,15 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: { guildId: string };
-    Body: { seasonName?: string };
+    Body: { seasonName?: string; officerName?: string };
   }>(
     "/guilds/:guildId/dkp/reset",
-    { onRequest: [app.authenticate] },
+    { onRequest: [requireRole("admin")] },
     async (request, reply) => {
       const { guildId } = request.params;
       const seasonName =
         request.body?.seasonName ?? `Saison-${new Date().toISOString().slice(0, 10)}`;
-      const officerName: string = (request.user as { bnetTag: string }).bnetTag;
+      const officerName = resolveOfficerName(request, request.body?.officerName);
       const now = new Date();
 
       await db.transaction(async (tx) => {

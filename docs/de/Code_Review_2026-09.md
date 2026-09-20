@@ -11,6 +11,8 @@ Geprüft wurden beide Repositories vollständig:
 
 **Verifikationsgrad:** Befunde mit ✅ wurden ausgeführt und reproduziert. Befunde mit 🔍 sind aus dem Code abgeleitet und hoch wahrscheinlich, aber nicht zur Laufzeit gegengeprüft (kein Live-Server, keine WoW-Instanz).
 
+**Stand der Umsetzung:** Die Sofort-Stufe ([A1](#a1), [A5](#a5), [B1](#b1), [C6](#c6)) ist umgesetzt und gegen eine echte PostgreSQL-Instanz verifiziert — siehe [Abschnitt E](#e-umgesetzt). Alles Übrige ist offen.
+
 ---
 
 ## 0. Kurzfassung — die fünf wichtigsten Punkte
@@ -25,7 +27,7 @@ Geprüft wurden beide Repositories vollständig:
 
 ## A. Sicherheit und Berechtigungen
 
-### <a id="a1"></a>A1 — Alle DKP-Schreiboperationen ohne Rollenprüfung 🔍 · **kritisch**
+### <a id="a1"></a>A1 — Alle DKP-Schreiboperationen ohne Rollenprüfung 🔍 · **kritisch** · ✔ BEHOBEN
 
 `apps/api/src/routes/dkp.ts:85,150,214,275,315`
 
@@ -91,7 +93,7 @@ In Kombination mit [A1](#a1) entsteht eine vollständige Kette: `POST /character
 
 ---
 
-### <a id="a5"></a>A5 — Officer-Prüfung im Bot ist fail-open 🔍 · **hoch**
+### <a id="a5"></a>A5 — Officer-Prüfung im Bot ist fail-open 🔍 · **hoch** · ✔ BEHOBEN
 
 `apps/bot/src/commands/dkp.ts:11-13`
 
@@ -174,7 +176,7 @@ Bei einem DB-Leak sind fremde Battle.net-Profile mit `wow.profile`-Scope abrufba
 
 ## B. Funktionsfehler
 
-### <a id="b1"></a>B1 — `/dkp award` und `/dkp spend` im Bot antworten mit HTTP 500 ✅ · **kritisch**
+### <a id="b1"></a>B1 — `/dkp award` und `/dkp spend` im Bot antworten mit HTTP 500 ✅ · **kritisch** · ✔ BEHOBEN
 
 `apps/api/src/index.ts:70-81` in Verbindung mit `apps/api/src/routes/dkp.ts:100,165,229,279,321`
 
@@ -539,7 +541,7 @@ Passend dazu: **CT 201 (`lw-cache`, Redis 7) ist laut `deploy/lxc/README.md:13` 
 
 ---
 
-### <a id="c6"></a>C6 — Keine einzige Sekundär-Index-Definition ✅ · **hoch**
+### <a id="c6"></a>C6 — Keine einzige Sekundär-Index-Definition ✅ · **hoch** · ✔ BEHOBEN
 
 `apps/api/src/db/schema.ts` enthält 0 `index()`-Aufrufe, die 16 Migrationen in `apps/api/drizzle/` enthalten 0 `CREATE INDEX`. Indiziert sind damit nur Primärschlüssel und die vier `unique()`-Constraints. Fremdschlüssel legt PostgreSQL **nicht** automatisch an.
 
@@ -578,9 +580,94 @@ Bei aktuell kleinen Tabellen fällt das nicht auf; `activity_logs` wächst aller
 
 | Priorität | Punkte | Aufwand |
 |-----------|--------|---------|
-| **Sofort** | [A1](#a1), [A5](#a5), [B1](#b1) — Rechte scharf schalten, Bot reparieren | klein, klar abgegrenzt |
-| **Kurzfristig** | [A2](#a2)–[A4](#a4), [A6](#a6), [B4](#b4), [B5](#b5), [B6](#b6), [C6](#c6) | jeweils klein, hoher Ertrag |
+| ~~**Sofort**~~ | ~~[A1](#a1), [A5](#a5), [B1](#b1), [C6](#c6)~~ | ✔ erledigt |
+| **Kurzfristig** | [A2](#a2)–[A4](#a4), [A6](#a6), [B4](#b4), [B5](#b5), [B6](#b6) | jeweils klein, hoher Ertrag |
 | **Mittelfristig** | [B2](#b2)+[B3](#b3) (Season-Modell), [B7](#b7)–[B9](#b9), [C1](#c1)–[C3](#c3) | Schema- bzw. Protokolländerung |
 | **Strukturell** | A7–A10, C5, C7, Testabdeckung, CI | begleitend |
 
 [B2](#b2) und [B3](#b3) gehören zusammen angefasst: Server und Addon brauchen dasselbe Season-Konzept, sonst bleibt der Reset auf einer der beiden Seiten wirkungslos.
+
+---
+
+## <a id="e-umgesetzt"></a>E. Umgesetzt (Sofort-Stufe)
+
+Behoben in `claude/zealous-archimedes-pka58j`. Verifiziert gegen eine echte PostgreSQL-16-Instanz mit allen 17 eingespielten Migrationen; `pnpm build` (5/5) und `pnpm test` (20/20) laufen durch.
+
+### A1 — Rollenprüfung auf den DKP-Schreibendpunkten
+
+| Endpunkt | vorher | jetzt |
+|----------|--------|-------|
+| `POST .../dkp/award` | `app.authenticate` | `requireRole("editor")` |
+| `POST .../dkp/spend` | `app.authenticate` | `requireRole("editor")` |
+| `POST .../dkp/adjust` | `app.authenticate` | `requireRole("editor")` |
+| `DELETE .../dkp/players/:name` | `app.authenticate` | `requireRole("admin")` |
+| `POST .../dkp/reset` | `app.authenticate` | `requireRole("admin")` |
+
+`requireRole` löst die Rollen zusätzlich **gegen die Gilde der Route** auf (`/guilds/:guildId/…`) statt immer gegen die primäre Gilde. Ohne das hätte ein Editor der Hauptgilde in jeder anderen Gilde derselben Installation buchen dürfen. Fallback auf die primäre Gilde bleibt, damit Routen ohne `guildId`-Parameter weiter funktionieren.
+
+Ist für eine Gilde **keine** Rolle konfiguriert, greift bewusst fail closed — die Antwort benennt aber die Ursache, statt nur „Keine Berechtigung" zu melden.
+
+### A5 — Officer-Prüfung im Bot schließt jetzt
+
+`apps/bot/src/commands/dkp.ts` gibt bei leerem `OFFICER_ROLE_IDS` `false` statt `true` zurück. Zusätzlich warnt der Bot beim Start (`events/ready.ts`), und die Variable steht nun überhaupt erst in `apps/bot/.env.example` — bisher fehlte sie dort, weshalb ein Betreiber sie nach Anleitung nie gesetzt hätte.
+
+### B1 — Bot-Pfad setzt `request.user`
+
+Neues Modul `apps/api/src/lib/auth.ts`:
+
+* `isBotRequest()` vergleicht das Secret **zeitkonstant** (`timingSafeEqual`) statt mit `===`
+* `markBotRequest()` setzt `request.isBot` und ein `request.user` mit Sentinel-`sub`
+* `resolveOfficerName()` nimmt den Officer-Namen beim Bot aus dem Body
+* `requirePlayerAccount()` weist den Bot auf `/sync/addon-data` ab — dort ist `uploadedBy` ein Fremdschlüssel auf `players.id`, den der Bot nicht bedienen kann
+
+Der Bot übergibt jetzt den ausführenden Discord-Officer (`interaction.user.displayName`). Vorher wäre selbst nach dem Fix jede über Discord gebuchte Transaktion als „Discord-Bot" protokolliert worden.
+
+`authenticate` gibt im Fehlerfall `reply` zurück (`return reply.status(401)…`) — bei async-Hooks der empfohlene Weg, die Lifecycle-Kette zu beenden.
+
+### C6 — Zehn Indizes
+
+Migration `0016_indexes.sql`, mit `IF NOT EXISTS` idempotent, plus die passenden `index()`-Definitionen in `schema.ts`.
+
+Messung an einer Gilde mit 800 Charakteren, für den Lookup, den der Sync **einmal pro Mitglied pro Upload** ausführt:
+
+```
+vorher:  Seq Scan on characters   (Rows Removed by Filter: 799)
+jetzt:   Index Scan using characters_guild_name_realm
+```
+
+Bei 800 Mitgliedern sind das 640.000 statt bisher gescannter Zeilen pro Upload.
+
+### Verifikation
+
+Zwei Testläufe gegen die echte API mit echter Datenbank:
+
+```
+── B1: Bot-Pfad (war vorher HTTP 500) ──────────────────────
+✅ Bot-Secret + /dkp/award                       -> 201
+✅ Bot-Secret + /dkp/spend                       -> 201
+✅ falsches Bot-Secret                           -> 401
+── A1: Rollenprüfung ───────────────────────────────────────
+✅ Spieler-JWT ohne Officer-Rolle -> award       -> 403
+✅ Spieler-JWT ohne Officer-Rolle -> spend       -> 403
+✅ Spieler-JWT ohne Admin-Rolle -> reset         -> 403
+✅ Spieler-JWT ohne Admin-Rolle -> Spieler löschen -> 403
+✅ ganz ohne Auth -> award                       -> 401
+✅ Discord-Officer im Eintrag                    -> ["Aiden"]
+── Officers kommen weiterhin durch ─────────────────────────
+✅ Admin  -> award / reset                       -> 201
+✅ Editor -> award                               -> 201
+✅ Editor -> reset / löschen                     -> 403
+✅ Editor -> award in fremder Gilde              -> 403
+```
+
+### ⚠️ Vor dem Deploy zu erledigen
+
+Die Rechteprüfung ist jetzt fail closed. **Ohne konfigurierte Rollen kann niemand mehr DKP buchen — auch die Officers nicht.** Also vor dem Ausrollen:
+
+1. `ADMIN_DISCORD_ROLE_ID` in `apps/api/.env` setzen (oder Rollen unter *Einstellungen* im Dashboard hinterlegen)
+2. `OFFICER_ROLE_IDS` in `apps/bot/.env` setzen — **die Variable fehlte bisher in der Vorlage**
+3. `pnpm db:migrate` läuft beim Deploy automatisch (`deploy/lxc/setup.sh:132`) und spielt `0016_indexes` mit ein
+
+### Nicht angefasst
+
+Bewusst außerhalb der Sofort-Stufe geblieben: [A2](#a2) (Raid-Endpunkte), [A3](#a3)/[A4](#a4) (Mass Assignment), [A6](#a6) (offene Leseendpunkte) und alles ab „Mittelfristig". Diese Routen sind unverändert.

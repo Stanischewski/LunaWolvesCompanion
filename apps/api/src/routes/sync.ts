@@ -5,6 +5,7 @@ import type { LuaValue } from "@guild/lua-parser";
 import type { WowClass } from "@guild/shared-types";
 import { db } from "../db/index.js";
 import { guilds, characters, addonSnapshots, activityLogs, dkpEntries, dkpStandings, dkpTombstones, players } from "../db/schema.js";
+import { requirePlayerAccount } from "../lib/auth.js";
 
 /**
  * Sync Service — Addon-Datenupload (Phase 2).
@@ -242,7 +243,7 @@ function parseDkp(
 export async function syncRoutes(app: FastifyInstance) {
   app.post<{ Body: string }>(
     "/sync/addon-data",
-    { onRequest: [app.authenticate], bodyLimit: 2_097_152 },
+    { onRequest: [app.authenticate, requirePlayerAccount], bodyLimit: 2_097_152 },
     async (request, reply) => {
       if (!request.body || !request.body.trim()) {
         return reply

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import Fastify from "fastify";
+import type { FastifyRequest, FastifyReply } from "fastify";
 import fastifyOAuth2 from "@fastify/oauth2";
 import fastifyJwt from "@fastify/jwt";
 import fastifyCookie from "@fastify/cookie";
@@ -15,6 +16,7 @@ import { settingsRoutes } from "./routes/settings.js";
 import { botRoutes } from "./routes/bot.js";
 import { classIconRoutes } from "./routes/classIcons.js";
 import { setupSocketHandlers } from "./ws/socket.js";
+import { isBotRequest, markBotRequest } from "./lib/auth.js";
 import { enrichMPlusScores } from "./jobs/raiderio.js";
 import { syncEquipment } from "./jobs/equipment.js";
 
@@ -58,15 +60,21 @@ await app.register(fastifyOAuth2, {
   callbackUri: process.env.BNET_CALLBACK_URL ?? "http://localhost:3001/auth/bnet/callback",
 });
 
-app.decorate("authenticate", async function (request: any, reply: any) {
-  const botSecret = process.env.BOT_SECRET;
-  if (botSecret && request.headers["x-bot-secret"] === botSecret) {
+// `isBot` muss auf jedem Request existieren, bevor ein Handler es liest —
+// decorateRequest legt die Eigenschaft einmalig auf dem Prototyp an.
+app.decorateRequest("isBot", false);
+
+app.decorate("authenticate", async function (request: FastifyRequest, reply: FastifyReply) {
+  if (isBotRequest(request)) {
+    // Der Bot hat kein JWT. Ohne gesetztes request.user laeuft jeder Handler,
+    // der request.user.bnetTag liest, in einen TypeError (HTTP 500).
+    markBotRequest(request);
     return;
   }
   try {
     await request.jwtVerify();
   } catch {
-    reply.status(401).send({ error: "Nicht authentifiziert" });
+    return reply.status(401).send({ error: "Nicht authentifiziert" });
   }
 });
 

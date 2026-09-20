@@ -144,15 +144,17 @@ export const api = {
       apiFetch<DkpEntry[]>(
         `/guilds/${config.lunaGuildId}/dkp/history?limit=10${player ? `&player=${encodeURIComponent(player)}` : ""}`,
       ),
-    award: (playerName: string, amount: number, reason: string) =>
+    // officerName landet im DKP-Protokoll — ohne ihn stuende dort fuer jede
+    // ueber Discord gebuchte Transaktion nur "Discord-Bot".
+    award: (playerName: string, amount: number, reason: string, officerName: string) =>
       apiFetch<DkpEntry>(`/guilds/${config.lunaGuildId}/dkp/award`, {
         method: "POST",
-        body: JSON.stringify({ playerName, amount, reason }),
+        body: JSON.stringify({ playerName, amount, reason, officerName }),
       }),
-    spend: (playerName: string, amount: number, reason: string) =>
+    spend: (playerName: string, amount: number, reason: string, officerName: string) =>
       apiFetch<DkpEntry>(`/guilds/${config.lunaGuildId}/dkp/spend`, {
         method: "POST",
-        body: JSON.stringify({ playerName, amount, reason }),
+        body: JSON.stringify({ playerName, amount, reason, officerName }),
       }),
   },
 };

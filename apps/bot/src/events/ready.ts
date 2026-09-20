@@ -16,6 +16,12 @@ export const readyEvent = {
     });
     console.log(`✓ ${commands.size} Slash Commands registriert (Guild: ${config.guildId})`);
     console.log(`✓ Eingeloggt als ${client.user.tag}`);
+
+    if (config.officerRoleIds.length === 0) {
+      console.warn(
+        "⚠ OFFICER_ROLE_IDS ist nicht gesetzt — /dkp award und /dkp spend sind gesperrt.",
+      );
+    }
     await loadClassEmojis(client);
     startScheduler(client);
   },
