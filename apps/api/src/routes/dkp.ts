@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, gt } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.js";
 import { characters, dkpEntries, dkpStandings, dkpTombstones, dkpSeasons } from "../db/schema.js";
 import { requireRole } from "../lib/permissions.js";
 import { resolveOfficerName } from "../lib/auth.js";
+import { getSeasonStart } from "../lib/dkpSeason.js";
 
 export async function dkpRoutes(app: FastifyInstance) {
   // ── READ ──────────────────────────────────────────────────────────────────
@@ -37,14 +38,20 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.get<{
     Params: { guildId: string };
-    Querystring: { player?: string; type?: string; limit?: string; offset?: string };
+    Querystring: { player?: string; type?: string; limit?: string; offset?: string; allSeasons?: string };
   }>(
     "/guilds/:guildId/dkp/history",
     { onRequest: [app.authenticate] },
     async (request) => {
-      const { player, type, limit: limitStr, offset: offsetStr } = request.query;
+      const { player, type, limit: limitStr, offset: offsetStr, allSeasons } = request.query;
       const limit = Math.min(Math.max(Number(limitStr) || 50, 1), 200);
       const offset = Math.max(Number(offsetStr) || 0, 0);
+
+      // Standardmäßig die laufende Saison — sonst stünden nach einem Reset
+      // Einträge in der Liste, die in den Standings nicht mehr zählen.
+      // ?allSeasons=1 liefert weiterhin alles.
+      const seasonStart =
+        allSeasons === "1" ? null : await getSeasonStart(db, request.params.guildId);
 
       return db
         .select()
@@ -56,6 +63,7 @@ export async function dkpRoutes(app: FastifyInstance) {
             type
               ? eq(dkpEntries.entryType, type as "manual" | "boss" | "spend" | "correction")
               : undefined,
+            seasonStart ? gt(dkpEntries.occurredAt, seasonStart) : undefined,
           ),
         )
         .orderBy(desc(dkpEntries.occurredAt))
@@ -73,6 +81,7 @@ export async function dkpRoutes(app: FastifyInstance) {
           id: dkpSeasons.id,
           name: dkpSeasons.name,
           archivedBy: dkpSeasons.archivedBy,
+          startedAt: dkpSeasons.startedAt,
           archivedAt: dkpSeasons.archivedAt,
         })
         .from(dkpSeasons)
@@ -341,10 +350,17 @@ export async function dkpRoutes(app: FastifyInstance) {
           where: eq(dkpStandings.guildId, guildId),
         });
 
+        const previousStart = await getSeasonStart(tx, guildId);
+
+        // `archivedAt` ist zugleich die Epoche der Folgesaison: ab hier
+        // zählen die Einträge. Ohne diese Grenze summierte der nächste
+        // Addon-Sync wieder über *alle* Einträge und holte den kompletten
+        // Vor-Reset-Stand zurück, sobald ein Spieler einen neuen Eintrag bekam.
         await tx.insert(dkpSeasons).values({
           guildId,
           name: seasonName,
           archivedBy: officerName,
+          startedAt: previousStart.getTime() === 0 ? null : previousStart,
           archivedAt: now,
           snapshotData: snapshot,
         });
@@ -362,7 +378,12 @@ export async function dkpRoutes(app: FastifyInstance) {
         resetBy: officerName,
       });
 
-      return reply.status(201).send({ seasonName, resetAt: now });
+      return reply.status(201).send({
+        seasonName,
+        resetAt: now,
+        // Epoche für das Addon: Einträge davor zählen nicht mehr.
+        seasonEpoch: Math.floor(now.getTime() / 1000),
+      });
     },
   );
 }

@@ -11,7 +11,7 @@ Geprüft wurden beide Repositories vollständig:
 
 **Verifikationsgrad:** Befunde mit ✅ wurden ausgeführt und reproduziert. Befunde mit 🔍 sind aus dem Code abgeleitet und hoch wahrscheinlich, aber nicht zur Laufzeit gegengeprüft (kein Live-Server, keine WoW-Instanz).
 
-**Stand der Umsetzung:** Sofort-Stufe ([A1](#a1), [A5](#a5), [B1](#b1), [C6](#c6)) und kurzfristige Stufe ([A2](#a2)–[A4](#a4), [A6](#a6), [B4](#b4)–[B6](#b6)) sind umgesetzt und verifiziert — siehe [Abschnitt E](#e-umgesetzt). Offen sind noch [A7](#a7)–[A10](#a10), [B2](#b2)/[B3](#b3) (Season-Modell), [B7](#b7)–[B15](#b15) und [C1](#c1)–[C5](#c5), [C7](#c7).
+**Stand der Umsetzung:** Sofort-, kurzfristige und mittelfristige Stufe sind umgesetzt und verifiziert — siehe [Abschnitt E](#e-umgesetzt). Offen sind noch [A7](#a7)–[A10](#a10), [B10](#b10)–[B15](#b15) und [C4](#c4), [C5](#c5), [C7](#c7).
 
 ---
 
@@ -222,7 +222,7 @@ Sauberer wäre ein eigener Guard, der den Officer-Namen aus dem Request-Body ent
 
 ---
 
-### <a id="b2"></a>B2 — Season-Reset im Web wird vom nächsten Sync rückgängig gemacht 🔍 · **kritisch**
+### <a id="b2"></a>B2 — Season-Reset im Web wird vom nächsten Sync rückgängig gemacht 🔍 · **kritisch** · ✔ BEHOBEN
 
 `apps/api/src/routes/dkp.ts:315-352` und `apps/api/src/routes/sync.ts:502-530`
 
@@ -241,7 +241,7 @@ Gefiltert wird nur über Tombstones, nicht über eine Season-Grenze. Sobald ein 
 
 ---
 
-### <a id="b3"></a>B3 — Season-Reset im Addon wird von offline gewesenen Officers rückgängig gemacht 🔍 · **kritisch**
+### <a id="b3"></a>B3 — Season-Reset im Addon wird von offline gewesenen Officers rückgängig gemacht 🔍 · **kritisch** · ✔ BEHOBEN
 
 `LunaWolves/Modules/DKP.lua:1631-1657` und `398-432`
 
@@ -332,7 +332,7 @@ Beim Bosskill-Batch oder bei einer gechunkten SYNCRESP entstehen so dutzende par
 
 ---
 
-### <a id="b7"></a>B7 — Rückkanal verliert Einträge bei Verbindungsabbruch 🔍 · **mittel**
+### <a id="b7"></a>B7 — Rückkanal verliert Einträge bei Verbindungsabbruch 🔍 · **mittel** · ✔ BEHOBEN
 
 `apps/api/src/routes/sync.ts:566-585` und `641-660`
 
@@ -350,7 +350,7 @@ Die Einträge gelten als ausgeliefert, sobald die Antwort *abgeschickt* wird. Br
 
 ---
 
-### <a id="b8"></a>B8 — Tombstone-Verfall wird serverseitig nie ausgewertet 🔍 · **mittel**
+### <a id="b8"></a>B8 — Tombstone-Verfall wird serverseitig nie ausgewertet 🔍 · **mittel** · ✔ BEHOBEN
 
 `apps/api/src/routes/sync.ts:391-397`
 
@@ -366,7 +366,7 @@ Die Spalte `expiresAt` wird geschrieben (`dkp.ts:281`, `sync.ts:377`), aber nirg
 
 ---
 
-### <a id="b9"></a>B9 — Gildenaustritte werden nie erkannt 🔍 · **mittel**
+### <a id="b9"></a>B9 — Gildenaustritte werden nie erkannt 🔍 · **mittel** · ✔ BEHOBEN
 
 `apps/api/src/routes/sync.ts:325-380`
 
@@ -469,7 +469,7 @@ Es gibt keinen Hinweis im Dashboard, dass das Equipment veraltet ist. Praktisch 
 
 ## C. Performance und Optimierung
 
-### <a id="c1"></a>C1 — N+1-Abfragen im Sync-Pfad · **hoch**
+### <a id="c1"></a>C1 — N+1-Abfragen im Sync-Pfad · **hoch** · ✔ BEHOBEN
 
 `apps/api/src/routes/sync.ts:325-380, 466-499, 502-530`
 
@@ -487,7 +487,7 @@ Die DKP-Einträge wurden bereits auf Bulk-Prefetch plus Batch-Insert optimiert (
 
 ---
 
-### <a id="c2"></a>C2 — `Award()` ist beim Sync quadratisch · **hoch**
+### <a id="c2"></a>C2 — `Award()` ist beim Sync quadratisch · **hoch** · ✔ BEHOBEN
 
 `LunaWolves/Modules/DKP.lua:155-159`
 
@@ -503,7 +503,7 @@ Lineare Suche pro Einfügung. Ein Vollabgleich mit n Einträgen kostet damit n²
 
 ---
 
-### <a id="c3"></a>C3 — SYNCRESP-Verstärkung · **mittel-hoch**
+### <a id="c3"></a>C3 — SYNCRESP-Verstärkung · **mittel-hoch** · ✔ BEHOBEN
 
 `LunaWolves/Modules/DKP.lua:398-432`
 
@@ -582,10 +582,10 @@ Bei aktuell kleinen Tabellen fällt das nicht auf; `activity_logs` wächst aller
 |-----------|--------|---------|
 | ~~**Sofort**~~ | ~~[A1](#a1), [A5](#a5), [B1](#b1), [C6](#c6)~~ | ✔ erledigt |
 | ~~**Kurzfristig**~~ | ~~[A2](#a2)–[A4](#a4), [A6](#a6), [B4](#b4)–[B6](#b6)~~ | ✔ erledigt |
-| **Mittelfristig** | [B2](#b2)+[B3](#b3) (Season-Modell), [B7](#b7)–[B9](#b9), [C1](#c1)–[C3](#c3) | Schema- bzw. Protokolländerung |
+| ~~**Mittelfristig**~~ | ~~[B2](#b2)+[B3](#b3), [B7](#b7)–[B9](#b9), [C1](#c1)–[C3](#c3)~~ | ✔ erledigt |
 | **Strukturell** | A7–A10, C5, C7, Testabdeckung, CI | begleitend |
 
-[B2](#b2) und [B3](#b3) gehören zusammen angefasst: Server und Addon brauchen dasselbe Season-Konzept, sonst bleibt der Reset auf einer der beiden Seiten wirkungslos.
+[B2](#b2) und [B3](#b3) wurden zusammen angefasst: Server und Addon brauchen dasselbe Season-Konzept, sonst bleibt der Reset auf einer der beiden Seiten wirkungslos.
 
 ---
 
@@ -755,9 +755,102 @@ Sofort gesendet: 1 (vorher: alle 30)   Ticks bis leer: 30   zugestellt: 30
 
 ---
 
+---
+
+### Mittelfristige Stufe
+
+Migration `0017_seasons_and_departures.sql`. Verifiziert mit 22 Verhaltensprüfungen gegen die echten Routen und eine echte PostgreSQL-16-Instanz, Addon-Prüfungen gegen WoW-API-Stubs. Addon-Version 1.3.0.
+
+#### B2 + B3 — Das Season-Modell
+
+Der Kern beider Befunde ist derselbe: es gab keine **Saison-Grenze**. Jetzt gibt es eine, auf beiden Seiten mit derselben Bedeutung.
+
+**Server** (`apps/api/src/lib/dkpSeason.ts`): `dkp_seasons.archivedAt` ist das Ende einer Saison und zugleich die Epoche, ab der die nächste zählt. `getSeasonStart()` liefert sie, `recalculateStandings()` summiert nur noch darüber. Die neue Spalte `startedAt` macht jede Saison selbstbeschreibend.
+
+**Addon** (`LunaWolvesDB.DKP.seasonEpoch`): `Award()` weist Einträge bis einschließlich der Epoche ab. `ApplySeasonEpoch()` archiviert, verwirft alles davor und baut Punkte und Index neu auf — `_PerformReset` und `HandleReset` nutzen jetzt beide diesen einen Weg.
+
+**Die Ausbreitung** war das eigentliche Problem bei B3: Ein Officer, der den Reset offline verpasst hatte, spielte beim nächsten Sync die komplette alte Saison zurück. Dagegen:
+
+* `SYNCREQ` trägt jetzt die eigene Epoche mit (`sinceTs;epoch`)
+* Ein Officer mit neuerer Epoche schickt sie vorab per `EPOCH`-Nachricht
+* `HandleEpoch` übernimmt sie und wendet den Reset lokal an
+* `HandleReset` ist idempotent — ein zweimal empfangener RESET ändert nichts
+
+`lastSyncTimestamp` wird beim Reset auf die Epoche gesetzt statt auf 0. Vorher forderte jeder zurückgesetzte Client danach einen Vollabgleich über genau die History an, die der Reset gerade beendet hatte.
+
+**Richtung Addon → Server** schließt sich der Kreis ebenfalls: Das Addon exportiert `seasonEpoch` in die SavedVariables, der Sync übernimmt eine neuere Addon-Saison und legt dafür einen `dkp_seasons`-Eintrag an.
+
+Nachweis — der Fall, der vorher fehlschlug:
+
+```
+Reset durchgeführt (Standings auf 0)
+Sync mit altem Eintrag (100 DKP, vor dem Reset) + neuem (7 DKP, danach)
+  -> current=7      (ohne Saison-Grenze wären es 107)
+  -> lifetime=7
+  -> beide Einträge bleiben für die History erhalten
+Addon-Reset im Upload  -> Server legt Saison an, current=50 (nur danach)
+```
+
+Und im Addon: 500 Einträge, Reset, dann alle 500 erneut eingespielt → **0 angenommen**, Punktestand bleibt 0.
+
+#### B7 — Rückkanal
+
+`POST /guilds/:guildId/sync/ack` bestätigt Einträge einzeln. Sync-Antwort und `pending-entries` markieren nichts mehr vorab, sondern liefern bis zu 200 offene Einträge.
+
+**Wichtige Einschränkung, die beim Umsetzen auffiel:** Der Rückkanal hat derzeit **gar keinen Konsumenten**. Der Desktop-Agent (`upload_in_background` in `lib.rs`) *zählt* `pendingWebEntries` nur und zeigt eine Meldung — er schreibt sie nirgendwohin. Ein WoW-Addon kann nicht über das Netz lesen; der Weg ins Spiel führt nur über eine Datei, die der Agent in den AddOns-Ordner schreibt und die das Addon beim nächsten Login einliest (das Verfahren, das z. B. der WeakAuras Companion nutzt).
+
+Diese Änderung stellt also sicher, dass im Web vergebene Punkte **nicht mehr verloren gehen** — sie bleiben offen, bis sie jemand abholt. Die Abholung selbst ist ein eigenes Stück Arbeit und steht noch aus.
+
+#### B8 — Tombstone-Ablauf
+
+`getActiveTombstones()` filtert über `expiresAt > now()`, ebenso die Standings-Berechnung. Nachgewiesen: ein seit 10 Tagen abgelaufener Tombstone blockiert einen neuen Eintrag nicht mehr (`current=33`). Die Konstante `TOMBSTONE_TTL_MS` liegt jetzt sichtbar neben dem Hinweis, dass sie zu `TOMBSTONE_TTL` in `DKP.lua` passen muss.
+
+#### B9 — Gildenaustritte
+
+Neue Spalte `characters.leftGuildAt`. Fehlt ein Charakter im Snapshot, wird sie gesetzt; taucht er wieder auf, geleert. Bewusst kein Löschen — DKP-History und Raid-Anmeldungen bleiben erhalten. Roster und Statistik blenden Ausgetretene aus (`?includeLeft=1` liefert sie), `memberCount` zählt nur noch Aktive, die Statistik meldet zusätzlich `formerMembers`.
+
+**Schutz gegen [B10](#b10):** Solange unklar ist, ob der Roster-Scan auch Offline-Mitglieder erfasst, wäre ein Teil-Snapshot fatal — er würde die halbe Gilde als ausgetreten markieren. Die Austrittsprüfung läuft deshalb nur, wenn der Snapshot mindestens **70 %** der bekannten aktiven Charaktere enthält; sonst wird sie übersprungen und geloggt. Nachgewiesen: ein Snapshot mit 17 % markiert niemanden.
+
+#### C1 — Sync ohne N+1
+
+Drei Schleifen ersetzt: Charaktere (einmal vorladen, im Speicher diffen, je eine Anweisung für Anlegen/Aktualisieren/Aktivität), Auto-Linking (eine `UPDATE … FROM (VALUES …)`-Anweisung) und Standings (eine `INSERT … SELECT … GROUP BY … ON CONFLICT`-Anweisung).
+
+Gemessen mit PostgreSQL-Anweisungsprotokoll, Gilde mit 500 Charakteren:
+
+| | vorher (aus dem Code) | jetzt (gemessen) |
+|---|---|---|
+| Anweisungen je Sync | ~1.500 | **15**, unabhängig von der Gildengröße |
+| Erst-Sync (500 Chars + 500 DKP-Einträge) | — | 212 ms |
+| Folge-Sync (500 Aktualisierungen) | — | 49 ms |
+
+Zwei Fallstricke, die dabei auftraten und im Code kommentiert sind: Drizzle expandiert ein JS-Array im `sql`-Template zu Einzelparametern (`unnest($1::varchar[])` wird ungültig), und postgres.js kann `Date`-Objekte in `tx.execute` nicht binden — beides gelöst über `VALUES`-Listen mit expliziten Casts und ISO-Strings.
+
+#### C2 — Duplikatprüfung in O(1)
+
+`DKP.entryIndex` wird beim Login aus der History aufgebaut und bei jedem Einfügen fortgeschrieben; `_PerformDelete` und `ApplySeasonEpoch` bauen ihn neu auf. Statt einer linearen Suche über die gesamte History (n²/2 Vergleiche pro Vollabgleich) jetzt ein Tabellenzugriff.
+
+#### C3 — SYNCRESP-Verstärkung
+
+Zwei Maßnahmen:
+
+* **Nur ein Officer antwortet.** Gestaffelt nach alphabetischem Rang (`OfficerRank()`, dieselbe deterministische Wahl wie `ShouldAutoAward`); wer zuerst dran ist, meldet das per `SYNCCLAIM` an die Gilde, die übrigen stehen ab.
+* **Seitenweise.** Höchstens 150 Einträge je Antwort, aufsteigend sortiert, mit `MORE=1`-Kopfzeile. Der Empfänger fordert die Folgeseite selbst an.
+
+Nachgewiesen: 400 Einträge → erste Seite mit genau 150 und `MORE=1`; Rang 0 antwortet und sendet `SYNCCLAIM`, Rang 1 steht nach dessen Empfang ab.
+
+Statt ~4.500 Addon-Nachrichten (5 Officers × 3.000 Einträge) sind es jetzt ~45 je Seite von genau einem Officer.
+
+#### Nebenbei
+
+`SYNC_COOLDOWN_MS` ist jetzt über die Umgebung konfigurierbar (0 schaltet den Cooldown ab) — nötig für automatisierte Tests, nützlich für Staging.
+
+---
+
 ### Nicht angefasst
 
-Offen bleiben [A7](#a7)–[A10](#a10) (JWT in URLs, WebSocket-Auth, Desktop-`state`-Nonce, Token-Verschlüsselung), [B2](#b2)/[B3](#b3) (Season-Modell — Schema- und Protokolländerung, gehört zusammen angefasst), [B7](#b7)–[B15](#b15) und die Optimierungen [C1](#c1)–[C5](#c5), [C7](#c7).
+Offen bleiben [A7](#a7)–[A10](#a10) (JWT in URLs, WebSocket-Auth, Desktop-`state`-Nonce, Token-Verschlüsselung), [B10](#b10) (Roster-Scan — braucht eine Prüfung im Spiel), [B11](#b11)–[B15](#b15) und die Optimierungen [C4](#c4), [C5](#c5), [C7](#c7).
+
+Dazu neu: **der Rückkanal braucht einen Konsumenten**, damit im Web vergebene DKP-Punkte tatsächlich im Spiel ankommen (siehe B7 oben).
 
 ### Hinweis zur Oberfläche
 

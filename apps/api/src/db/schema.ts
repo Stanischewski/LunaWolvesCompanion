@@ -62,9 +62,16 @@ export const characters = pgTable("characters", {
   mPlusScore: integer("m_plus_score").notNull().default(0),
   lastLogin: timestamp("last_login", { withTimezone: true }),
   guildRank: integer("guild_rank").notNull().default(0),
+  /**
+   * Gesetzt, sobald ein Charakter in einem vollstaendigen Roster-Snapshot fehlt.
+   * Bewusst kein Loeschen: die DKP-History und vergangene Raid-Anmeldungen
+   * sollen erhalten bleiben. Wird geleert, wenn der Charakter wieder auftaucht.
+   */
+  leftGuildAt: timestamp("left_guild_at", { withTimezone: true }),
 }, (t) => [
   index("characters_guild_name_realm").on(t.guildId, t.name, t.realm),
   index("characters_player").on(t.playerId),
+  index("characters_guild_active").on(t.guildId, t.leftGuildAt),
 ]);
 
 export const activityLogs = pgTable("activity_logs", {
@@ -244,6 +251,9 @@ export const dkpSeasons = pgTable("dkp_seasons", {
     .references(() => guilds.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 128 }).notNull(),
   archivedBy: varchar("archived_by", { length: 64 }).notNull(),
+  /** Beginn der Saison = archivedAt der Vorgaengersaison (null bei der ersten). */
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  /** Ende der Saison. Zugleich die Epoche, ab der die Folgesaison zaehlt. */
   archivedAt: timestamp("archived_at", { withTimezone: true }).notNull(),
   snapshotData: jsonb("snapshot_data").notNull(),
 }, (t) => [
