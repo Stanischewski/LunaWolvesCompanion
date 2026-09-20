@@ -17,10 +17,36 @@ import { botRoutes } from "./routes/bot.js";
 import { classIconRoutes } from "./routes/classIcons.js";
 import { setupSocketHandlers } from "./ws/socket.js";
 import { isBotRequest, markBotRequest } from "./lib/auth.js";
+import { initCache, cacheStatus } from "./lib/cache.js";
 import { enrichMPlusScores } from "./jobs/raiderio.js";
 import { syncEquipment } from "./jobs/equipment.js";
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: {
+    // Fastify protokolliert standardmäßig req.url. Dort können Einmal-Codes
+    // und Tickets stehen; Authorization- und Cookie-Header sowieso.
+    redact: {
+      paths: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        'req.headers["x-bot-secret"]',
+        'res.headers.location',
+      ],
+      censor: "[redigiert]",
+    },
+    serializers: {
+      req(request) {
+        // Query-Strings abschneiden — der Pfad genügt zur Fehlersuche.
+        const url = typeof request.url === "string" ? request.url.split("?")[0] : request.url;
+        return {
+          method: request.method,
+          url,
+          remoteAddress: request.socket?.remoteAddress,
+        };
+      },
+    },
+  },
+});
 
 const io = new SocketServer(app.server, {
   cors: {
@@ -30,7 +56,6 @@ const io = new SocketServer(app.server, {
   path: "/ws",
 });
 app.decorate("io", io);
-setupSocketHandlers(io, app.log);
 
 await app.register(fastifyCookie);
 
@@ -38,6 +63,9 @@ await app.register(fastifyJwt, {
   secret: process.env.JWT_SECRET ?? "dev-secret-change-me",
   cookie: { cookieName: "token", signed: false },
 });
+
+// Erst jetzt, weil der Handshake app.jwt braucht.
+setupSocketHandlers(io, app.log, app);
 
 const region = process.env.BNET_REGION ?? "eu";
 
@@ -78,8 +106,10 @@ app.decorate("authenticate", async function (request: FastifyRequest, reply: Fas
   }
 });
 
+await initCache(app.log);
+
 app.get("/api/v1/health", async () => {
-  return { status: "ok", timestamp: new Date().toISOString() };
+  return { status: "ok", timestamp: new Date().toISOString(), cache: cacheStatus().backend };
 });
 
 await app.register(authRoutes);

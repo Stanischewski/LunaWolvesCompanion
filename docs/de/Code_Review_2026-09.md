@@ -11,7 +11,7 @@ Geprüft wurden beide Repositories vollständig:
 
 **Verifikationsgrad:** Befunde mit ✅ wurden ausgeführt und reproduziert. Befunde mit 🔍 sind aus dem Code abgeleitet und hoch wahrscheinlich, aber nicht zur Laufzeit gegengeprüft (kein Live-Server, keine WoW-Instanz).
 
-**Stand der Umsetzung:** Sofort-, kurzfristige und mittelfristige Stufe sind umgesetzt und verifiziert — siehe [Abschnitt E](#e-umgesetzt). Offen sind noch [A7](#a7)–[A10](#a10), [B10](#b10)–[B15](#b15) und [C4](#c4), [C5](#c5), [C7](#c7).
+**Stand der Umsetzung:** Alle vier Stufen sind umgesetzt und verifiziert — siehe [Abschnitt E](#e-umgesetzt). Offen bleiben [B10](#b10) (braucht eine Prüfung im Spiel), [B11](#b11)–[B15](#b15), [C4](#c4) und der Rückkanal-Konsument.
 
 ---
 
@@ -125,7 +125,7 @@ Alle ohne `onRequest`-Guard. Geschützt wird nur durch die Unkenntnis der Gilden
 
 ---
 
-### <a id="a7"></a>A7 — JWTs in URLs und damit in den Logs 🔍 · **mittel**
+### <a id="a7"></a>A7 — JWTs in URLs und damit in den Logs 🔍 · **mittel** · ✔ BEHOBEN
 
 `apps/api/src/routes/auth.ts:81,110` · `apps/web/app/auth/discord-link/route.ts:8`
 
@@ -140,7 +140,7 @@ Die API läuft mit `Fastify({ logger: true })` (`index.ts:21`), das standardmä�
 
 ---
 
-### <a id="a8"></a>A8 — WebSocket ohne Authentifizierung 🔍 · **mittel**
+### <a id="a8"></a>A8 — WebSocket ohne Authentifizierung 🔍 · **mittel** · ✔ BEHOBEN
 
 `apps/api/src/ws/socket.ts:8-11`
 
@@ -154,7 +154,7 @@ Jeder anonyme Client kann jedem Gilden-Raum beitreten und erhält `dkp_update`, 
 
 ---
 
-### <a id="a9"></a>A9 — Desktop-Login ohne `state`-Nonce, Token im Klartext 🔍 · **mittel**
+### <a id="a9"></a>A9 — Desktop-Login ohne `state`-Nonce, Token im Klartext 🔍 · **mittel** · ✔ BEHOBEN
 
 `apps/desktop/src-tauri/src/lib.rs:239-278`
 
@@ -166,7 +166,7 @@ Zusätzlich landet das JWT unverschlüsselt in `config.json` (`lib.rs:24-31, 58-
 
 ---
 
-### <a id="a10"></a>A10 — Battle.net-Access-Token unverschlüsselt in der DB 🔍 · **niedrig-mittel**
+### <a id="a10"></a>A10 — Battle.net-Access-Token unverschlüsselt in der DB 🔍 · **niedrig-mittel** · ✔ BEHOBEN
 
 `apps/api/src/db/schema.ts:35` — `bnetAccessToken: text(...)`.
 
@@ -526,7 +526,7 @@ Auf ein `SYNCREQ` antwortet **jeder** Officer, und zwar mit *allen* Einträgen n
 
 ---
 
-### <a id="c5"></a>C5 — Unbegrenzte In-Memory-Caches, ungenutztes Redis · **mittel**
+### <a id="c5"></a>C5 — Unbegrenzte In-Memory-Caches, ungenutztes Redis · **mittel** · ✔ BEHOBEN
 
 | Cache | Datei | Eviction |
 |-------|-------|----------|
@@ -583,7 +583,7 @@ Bei aktuell kleinen Tabellen fällt das nicht auf; `activity_logs` wächst aller
 | ~~**Sofort**~~ | ~~[A1](#a1), [A5](#a5), [B1](#b1), [C6](#c6)~~ | ✔ erledigt |
 | ~~**Kurzfristig**~~ | ~~[A2](#a2)–[A4](#a4), [A6](#a6), [B4](#b4)–[B6](#b6)~~ | ✔ erledigt |
 | ~~**Mittelfristig**~~ | ~~[B2](#b2)+[B3](#b3), [B7](#b7)–[B9](#b9), [C1](#c1)–[C3](#c3)~~ | ✔ erledigt |
-| **Strukturell** | A7–A10, C5, C7, Testabdeckung, CI | begleitend |
+| ~~**Strukturell**~~ | ~~[A7](#a7)–[A10](#a10), [C5](#c5), C7, Testabdeckung, CI~~ | ✔ erledigt |
 
 [B2](#b2) und [B3](#b3) wurden zusammen angefasst: Server und Addon brauchen dasselbe Season-Konzept, sonst bleibt der Reset auf einer der beiden Seiten wirkungslos.
 
@@ -846,11 +846,91 @@ Statt ~4.500 Addon-Nachrichten (5 Officers × 3.000 Einträge) sind es jetzt ~45
 
 ---
 
+---
+
+### Strukturelle Stufe
+
+Verifiziert mit 20 Verhaltensprüfungen gegen echte Routen, echte Datenbank und einen echten Socket.IO-Client, plus einer Regressionsprüfung über alle vorherigen Stufen. Der Rust-Agent kompiliert (`cargo check`, `cargo clippy` ohne Warnungen).
+
+#### A7 — Keine JWTs mehr in URLs
+
+Drei Stellen trugen ein sieben Tage gültiges Token durch die URL: die Rückleitung ins Web, die Rückleitung an den Desktop-Agent und der Discord-Link. Der letzte ging dabei direkt an die API — und damit, weil sie mit `logger: true` läuft und Fastify `req.url` protokolliert, im Klartext in die PM2-Logs auf CT 202.
+
+Neu ist ein Einmal-Code (`lib/authCodes.ts`): 60 Sekunden gültig, genau einmal einlösbar, serverseitig nur als SHA-256-Hash.
+
+| Weg | vorher | jetzt |
+|-----|--------|-------|
+| Web-Rückleitung | `/auth/callback?token=<JWT>` | `?code=…`, Tausch per `POST /auth/exchange` |
+| Discord-Link | `/auth/discord/link?token=<JWT>` | `POST /auth/discord/ticket`, dann `?ticket=…` |
+| Desktop | `127.0.0.1:port/?token=<JWT>` | `?code=…&state=…`, Tausch durch den Agent |
+
+Der Tausch läuft per POST, weil Query-Parameter in Logs und Verläufen landen — dafür gibt es einen eigenen Testfall.
+
+Zusätzlich redigiert der Logger jetzt `authorization`, `cookie`, `x-bot-secret` und `location`, und der Request-Serializer schneidet Query-Strings ab.
+
+#### A8 — WebSocket
+
+Das JWT wird beim Handshake geprüft (`auth.token` oder Authorization-Header), `join:guild` verlangt einen Charakter in genau dieser Gilde, und die Zahl der Räume je Verbindung ist auf 5 begrenzt. `join:guild` beantwortet den Beitritt jetzt per Callback, damit die Oberfläche eine Ablehnung anzeigen kann.
+
+Gemessen mit einem echten Socket.IO-Client:
+
+```
+ohne Token            -> abgewiesen ("Nicht authentifiziert")
+ungültiges Token      -> abgewiesen ("Ungültiges Token")
+gültiges Token        -> verbunden
+eigene Gilde          -> Beitritt erlaubt
+FREMDE Gilde          -> abgelehnt ("Kein Charakter in dieser Gilde")
+```
+
+`LiveFeed` reicht das Token durch (Cookie ist httpOnly, also über die Server-Komponente) und zeigt Ablehnungen an, statt still nichts zu empfangen.
+
+#### A9 — Desktop-Agent
+
+Der Loopback-Server nahm **die erste beliebige Anfrage** mit einem `token`-Parameter an. Ein lokaler Prozess, der die Ports durchprobiert, konnte dem Agent damit ein fremdes Token unterschieben.
+
+Jetzt erzeugt der Agent einen 32 Zeichen langen `state`-Nonce, gibt ihn über `/auth/desktop?port=&state=` mit und vergleicht ihn beim Rücklauf zeitkonstant. Ohne Übereinstimmung wird die Anmeldung abgelehnt. Unterwegs ist ohnehin nur noch der Einmal-Code; die Abschlussseite trägt `Cache-Control: no-store`.
+
+Das Token liegt nicht mehr im Klartext in `config.json`, sondern im Schlüsselbund des Betriebssystems (`keyring`-Crate: Keychain, Windows Credential Manager, Secret Service). Eine alte `config.json` mit Token wird beim ersten Start übernommen und das Feld danach nicht mehr geschrieben (`skip_serializing`) — ohne Migration und ohne Neuanmeldung.
+
+#### A10 — Battle.net-Tokens verschlüsselt
+
+AES-256-GCM mit einem Schlüssel aus `TOKEN_ENCRYPTION_KEY` (`lib/crypto.ts`). Format `enc:v1:<iv>:<tag>:<ciphertext>`.
+
+Der Übergang kommt ohne Stichtag aus: `decryptToken` gibt einen Wert ohne Präfix unverändert zurück, bereits gespeicherte Klartext-Tokens funktionieren also weiter und werden beim nächsten Login ersetzt. Fehlt der Schlüssel, warnt die API beim Start und speichert wie bisher.
+
+Neun Testfälle decken das ab, darunter: gleicher Klartext ergibt verschiedene Chiffrate (sonst wären gleiche Tokens in der DB als solche erkennbar), Manipulation am Chiffrat schlägt fehl (GCM), falscher Schlüssel gibt `null` statt Müll.
+
+#### C5 — Gemeinsamer Cache, Redis in Betrieb
+
+`roleCache`, `syncCooldowns` und `gemStatCache` wuchsen monoton und waren prozesslokal. Letzteres war mehr als ein Schönheitsfehler: sobald PM2 auf `instances > 1` steht, hat jeder Worker seinen eigenen Sync-Cooldown — ein Nutzer könnte ihn durch Wiederholung umgehen.
+
+Neu ist `lib/cache.ts` mit Redis (CT 201, bisher ohne Aufgabe) und einem LRU-Speicher-Fallback mit fester Obergrenze. Der Sync-Cooldown nutzt `cacheSetIfAbsent`, was auch über mehrere Prozesse hinweg greift. Fällt Redis aus, rutscht der Cache still auf den Speicher zurück — ein ausgefallener Cache darf die API nicht mitreißen. `/health` meldet das aktive Backend.
+
+#### C7 und Testabdeckung
+
+* **Ungültige UUIDs geben 400 statt 500.** Statt überall Regex einzustreuen nutzt die API jetzt Fastifys eingebaute Schema-Validierung (`lib/schemas.ts`). Bei rollengeschützten Routen kommt weiterhin zuerst 403 — der `onRequest`-Hook läuft vor der Validierung, und das ist richtig so.
+* **Middleware prüft den Ablauf.** Zuvor reichte die Existenz des Cookies: nach sieben Tagen kam der Nutzer ins Dashboard und sah eine Fehlerseite, statt zur Anmeldung geschickt zu werden.
+* **`resolveGuild`** ist mit React `cache` je Anfrage memoisiert. Bewusst **nicht** `unstable_cache`: das verträgt kein `cookies()`, und anfrageübergreifend zu cachen würde die Antwort eines Nutzers an andere ausliefern.
+* **Tests:** 29 im API-Paket (Einmal-Codes, Verschlüsselung, Cache, Code-Tausch), zusammen mit dem Lua-Parser jetzt **49** statt vorher 20.
+* **CI:** Neuer Workflow mit PostgreSQL- und Redis-Diensten, der Build, Typprüfung, Tests und *alle Migrationen gegen eine leere Datenbank* laufen lässt und danach prüft, dass jede Tabelle aus `schema.ts` existiert. Bisher gab es nur den Desktop-Release-Workflow.
+* **Addon-CI:** Syntaxprüfung aller Lua-Dateien plus Abgleich, dass jede in der TOC gelistete Datei existiert.
+* Tote Variable `isDragging` in `Core.lua` entfernt.
+
+#### Vor dem Deploy
+
+Zwei neue Umgebungsvariablen, beide in `apps/api/.env.example` beschrieben:
+
+* `TOKEN_ENCRYPTION_KEY` — `openssl rand -hex 32`. Ohne sie bleibt alles beim Alten, die API warnt beim Start.
+* `REDIS_URL` — `redis://10.10.10.201:6379`. Ohne sie greift der Speicher-Cache; das genügt bei einem Prozess.
+
+---
+
 ### Nicht angefasst
 
-Offen bleiben [A7](#a7)–[A10](#a10) (JWT in URLs, WebSocket-Auth, Desktop-`state`-Nonce, Token-Verschlüsselung), [B10](#b10) (Roster-Scan — braucht eine Prüfung im Spiel), [B11](#b11)–[B15](#b15) und die Optimierungen [C4](#c4), [C5](#c5), [C7](#c7).
-
-Dazu neu: **der Rückkanal braucht einen Konsumenten**, damit im Web vergebene DKP-Punkte tatsächlich im Spiel ankommen (siehe B7 oben).
+* [B10](#b10) — der Roster-Scan braucht eine Prüfung im Spiel (`/dump`), die von außen nicht machbar ist. Der 70-%-Schutz aus B9 fängt die Folgen ab.
+* [B11](#b11)–[B15](#b15) — Invite-Spoofing, Gilden-Namensfallback, `__proto__`, abgelegte Ausrüstung, fehlender Refresh-Token.
+* [C4](#c4) — Überlappungsschutz für die Hintergrund-Jobs.
+* **Der Rückkanal braucht einen Konsumenten**, damit im Web vergebene DKP-Punkte tatsächlich im Spiel ankommen (siehe B7). Das ist ein eigenes Feature, kein Review-Befund.
 
 ### Hinweis zur Oberfläche
 

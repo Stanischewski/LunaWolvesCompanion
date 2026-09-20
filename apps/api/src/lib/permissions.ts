@@ -3,13 +3,8 @@ import { db } from "../db/index.js";
 import { players, guilds, guildSettings, raidEvents } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { isBotRequest, markBotRequest } from "./auth.js";
+import { cacheGet, cacheSet } from "./cache.js";
 
-interface RoleCacheEntry {
-  roles: string[];
-  cachedAt: number;
-}
-
-const roleCache = new Map<string, RoleCacheEntry>();
 const CACHE_TTL = 5 * 60 * 1000;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -69,8 +64,15 @@ async function resolveGuildForRoles(request: FastifyRequest, resolver: GuildIdRe
 }
 
 async function getDiscordMemberRoles(discordId: string): Promise<string[]> {
-  const cached = roleCache.get(discordId);
-  if (cached && Date.now() - cached.cachedAt < CACHE_TTL) return cached.roles;
+  const cacheKey = `roles:${discordId}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached !== null) {
+    try {
+      return JSON.parse(cached) as string[];
+    } catch {
+      // beschädigter Eintrag — neu holen
+    }
+  }
 
   const discordGuildId = process.env.DISCORD_GUILD_ID;
   const botToken = process.env.DISCORD_BOT_TOKEN;
@@ -85,7 +87,7 @@ async function getDiscordMemberRoles(discordId: string): Promise<string[]> {
   if (!res.ok) return [];
 
   const member = (await res.json()) as { roles: string[] };
-  roleCache.set(discordId, { roles: member.roles, cachedAt: Date.now() });
+  await cacheSet(cacheKey, JSON.stringify(member.roles), CACHE_TTL);
   return member.roles;
 }
 

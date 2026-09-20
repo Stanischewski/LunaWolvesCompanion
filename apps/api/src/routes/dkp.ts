@@ -6,13 +6,14 @@ import { characters, dkpEntries, dkpStandings, dkpTombstones, dkpSeasons } from 
 import { requireRole } from "../lib/permissions.js";
 import { resolveOfficerName } from "../lib/auth.js";
 import { getSeasonStart } from "../lib/dkpSeason.js";
+import { guildIdParams, guildIdAndPlayerParams } from "../lib/schemas.js";
 
 export async function dkpRoutes(app: FastifyInstance) {
   // ── READ ──────────────────────────────────────────────────────────────────
 
   app.get<{ Params: { guildId: string } }>(
     "/guilds/:guildId/dkp/standings",
-    { onRequest: [app.authenticate] },
+    { onRequest: [app.authenticate], schema: { params: guildIdParams } },
     async (request) => {
       return db.query.dkpStandings.findMany({
         where: eq(dkpStandings.guildId, request.params.guildId),
@@ -23,7 +24,7 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { guildId: string; playerName: string } }>(
     "/guilds/:guildId/dkp/standings/:playerName",
-    { onRequest: [app.authenticate] },
+    { onRequest: [app.authenticate], schema: { params: guildIdAndPlayerParams } },
     async (request, reply) => {
       const standing = await db.query.dkpStandings.findFirst({
         where: and(
@@ -41,7 +42,7 @@ export async function dkpRoutes(app: FastifyInstance) {
     Querystring: { player?: string; type?: string; limit?: string; offset?: string; allSeasons?: string };
   }>(
     "/guilds/:guildId/dkp/history",
-    { onRequest: [app.authenticate] },
+    { onRequest: [app.authenticate], schema: { params: guildIdParams } },
     async (request) => {
       const { player, type, limit: limitStr, offset: offsetStr, allSeasons } = request.query;
       const limit = Math.min(Math.max(Number(limitStr) || 50, 1), 200);
@@ -74,7 +75,7 @@ export async function dkpRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { guildId: string } }>(
     "/guilds/:guildId/dkp/seasons",
-    { onRequest: [app.authenticate] },
+    { onRequest: [app.authenticate], schema: { params: guildIdParams } },
     async (request) => {
       return db
         .select({
@@ -103,7 +104,7 @@ export async function dkpRoutes(app: FastifyInstance) {
     };
   }>(
     "/guilds/:guildId/dkp/award",
-    { onRequest: [requireRole("editor")] },
+    { onRequest: [requireRole("editor")], schema: { params: guildIdParams } },
     async (request, reply) => {
       const { playerName, amount, reason = "Manuell", entryType = "manual" } = request.body;
       if (!playerName || !(amount > 0)) {
@@ -168,7 +169,7 @@ export async function dkpRoutes(app: FastifyInstance) {
     Body: { playerName: string; amount: number; reason?: string; officerName?: string };
   }>(
     "/guilds/:guildId/dkp/spend",
-    { onRequest: [requireRole("editor")] },
+    { onRequest: [requireRole("editor")], schema: { params: guildIdParams } },
     async (request, reply) => {
       const { playerName, amount, reason = "Ausgabe" } = request.body;
       if (!playerName || !(amount > 0)) {
@@ -232,7 +233,7 @@ export async function dkpRoutes(app: FastifyInstance) {
     Body: { playerName: string; amount: number; reason?: string; officerName?: string };
   }>(
     "/guilds/:guildId/dkp/adjust",
-    { onRequest: [requireRole("editor")] },
+    { onRequest: [requireRole("editor")], schema: { params: guildIdParams } },
     async (request, reply) => {
       const { playerName, amount, reason = "Korrektur" } = request.body;
       if (!playerName || amount === undefined || amount === 0) {
@@ -296,7 +297,7 @@ export async function dkpRoutes(app: FastifyInstance) {
     Body: { officerName?: string } | undefined;
   }>(
     "/guilds/:guildId/dkp/players/:playerName",
-    { onRequest: [requireRole("admin")] },
+    { onRequest: [requireRole("admin")], schema: { params: guildIdAndPlayerParams } },
     async (request, reply) => {
       const { guildId, playerName } = request.params;
       const officerName = resolveOfficerName(request, request.body?.officerName);
@@ -336,7 +337,7 @@ export async function dkpRoutes(app: FastifyInstance) {
     Body: { seasonName?: string; officerName?: string };
   }>(
     "/guilds/:guildId/dkp/reset",
-    { onRequest: [requireRole("admin")] },
+    { onRequest: [requireRole("admin")], schema: { params: guildIdParams } },
     async (request, reply) => {
       const { guildId } = request.params;
       const seasonName =

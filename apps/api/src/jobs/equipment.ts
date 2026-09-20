@@ -2,11 +2,24 @@ import { db } from "../db/index.js";
 import { players, characters, characterEquipment, itemIconCache } from "../db/schema.js";
 import { eq, and, isNotNull, gt } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
+import { decryptToken } from "../lib/crypto.js";
 
 const region = process.env.BNET_REGION ?? "eu";
 
 let cachedClientToken: { value: string; expiry: Date } | null = null;
+
+// Begrenzt: der Cache wuchs zuvor unbegrenzt ueber die Laufzeit des Prozesses.
+const GEM_CACHE_MAX = 2_000;
 const gemStatCache = new Map<number, string | null>();
+
+function rememberGemStat(gemId: number, stat: string | null): void {
+  gemStatCache.set(gemId, stat);
+  while (gemStatCache.size > GEM_CACHE_MAX) {
+    const oldest = gemStatCache.keys().next();
+    if (oldest.done) break;
+    gemStatCache.delete(oldest.value);
+  }
+}
 
 async function getClientToken(): Promise<string> {
   if (cachedClientToken && cachedClientToken.expiry > new Date()) {
@@ -42,7 +55,7 @@ async function resolveGemStat(gemId: number, clientToken: string): Promise<strin
     ? ((await res.json()) as { preview_item?: { description?: string }; description?: string })
         .preview_item?.description ?? null
     : null;
-  gemStatCache.set(gemId, stat);
+  rememberGemStat(gemId, stat);
   return stat;
 }
 
@@ -140,9 +153,17 @@ export async function syncEquipment(log: FastifyBaseLogger) {
     const charName = char.charName.toLowerCase();
 
     try {
+      // Tokens liegen verschlüsselt in der DB; Bestandsdaten im Klartext
+      // kommen unverändert zurück (siehe lib/crypto.ts).
+      const accessToken = decryptToken(char.bnetAccessToken);
+      if (!accessToken) {
+        log.warn(`[Equipment] ${char.charName}: Token nicht lesbar, übersprungen.`);
+        continue;
+      }
+
       const res = await fetch(
         `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${charName}/equipment?namespace=profile-${region}&locale=de_DE`,
-        { headers: { Authorization: `Bearer ${char.bnetAccessToken}` } },
+        { headers: { Authorization: `Bearer ${accessToken}` } },
       );
 
       if (!res.ok) {

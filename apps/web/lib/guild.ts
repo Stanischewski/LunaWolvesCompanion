@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { apiFetch } from "./api";
 
 export interface Guild {
@@ -16,8 +17,16 @@ export interface Guild {
  * 2. GUILD_NAME env-Variable (Fallback für alte Setups)
  * 3. Erster Charakter des eingeloggten Spielers, der einer Gilde angehört
  * 4. Erste Gilde aus /guilds
+ *
+ * Mit React `cache` je Anfrage memoisiert: Seite und Server-Actions riefen
+ * resolveGuild mehrfach im selben Render auf und lösten dabei jedes Mal
+ * dieselben API-Aufrufe aus.
+ *
+ * Bewusst NICHT `unstable_cache`: das darf `cookies()` nicht enthalten, und
+ * apiFetch liest das Auth-Cookie. Anfrageübergreifend zu cachen würde
+ * außerdem die Antwort eines Nutzers an andere ausliefern.
  */
-export async function resolveGuild(): Promise<Guild | null> {
+export const resolveGuild = cache(async function resolveGuild(): Promise<Guild | null> {
   const allGuilds = await apiFetch<Guild[]>("/guilds").catch(() => [] as Guild[]);
 
   // 1. Primäre Gilde per DB konfiguriert
@@ -44,4 +53,4 @@ export async function resolveGuild(): Promise<Guild | null> {
 
   // 4. Erste Gilde in der DB
   return allGuilds[0] ?? null;
-}
+});

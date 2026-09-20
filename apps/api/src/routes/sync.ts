@@ -8,6 +8,7 @@ import { guilds, characters, addonSnapshots, activityLogs, dkpEntries, dkpStandi
 import { requirePlayerAccount } from "../lib/auth.js";
 import { requireRole } from "../lib/permissions.js";
 import { getSeasonStart, recalculateStandings, getActiveTombstones } from "../lib/dkpSeason.js";
+import { cacheSetIfAbsent } from "../lib/cache.js";
 
 /**
  * Sync Service — Addon-Datenupload (Phase 2).
@@ -37,9 +38,12 @@ const PENDING_ENTRY_LIMIT = 200;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Einfacher In-Memory-Cooldown pro Spieler (verhindert Sync-Spam).
-// Ueber SYNC_COOLDOWN_MS konfigurierbar — 0 schaltet ihn ab (Tests, Staging).
-const syncCooldowns = new Map<string, number>();
+// Cooldown pro Spieler (verhindert Sync-Spam). Ueber SYNC_COOLDOWN_MS
+// konfigurierbar — 0 schaltet ihn ab (Tests, Staging).
+//
+// Liegt im gemeinsamen Cache statt in einer prozesslokalen Map: sonst haette
+// jeder PM2-Worker seinen eigenen Cooldown, und ein Nutzer koennte ihn durch
+// Wiederholung umgehen, je nachdem welcher Worker antwortet.
 const SYNC_COOLDOWN_MS = Number(process.env.SYNC_COOLDOWN_MS ?? 60_000);
 
 const DKP_TYPE_MAP: Record<string, "manual" | "boss" | "spend" | "correction"> = {
@@ -294,13 +298,19 @@ export async function syncRoutes(app: FastifyInstance) {
         });
       }
 
-      const nowMs = Date.now();
-      const lastSync = syncCooldowns.get(request.user.sub) ?? 0;
-      if (SYNC_COOLDOWN_MS > 0 && nowMs - lastSync < SYNC_COOLDOWN_MS) {
-        const waitSec = Math.ceil((SYNC_COOLDOWN_MS - (nowMs - lastSync)) / 1000);
-        return reply.status(429).send({ error: `Sync-Cooldown aktiv. Bitte ${waitSec}s warten.` });
+      if (SYNC_COOLDOWN_MS > 0) {
+        const fresh = await cacheSetIfAbsent(
+          `sync:${request.user.sub}`,
+          String(Date.now()),
+          SYNC_COOLDOWN_MS,
+        );
+        if (!fresh) {
+          const waitSec = Math.ceil(SYNC_COOLDOWN_MS / 1000);
+          return reply
+            .status(429)
+            .send({ error: `Sync-Cooldown aktiv. Bitte bis zu ${waitSec}s warten.` });
+        }
       }
-      syncCooldowns.set(request.user.sub, nowMs);
 
       const result = await db.transaction(async (tx) => {
         let guild = await tx.query.guilds.findFirst({

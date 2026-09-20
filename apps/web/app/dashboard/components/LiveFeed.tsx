@@ -14,16 +14,36 @@ interface LiveEvent {
 
 let eventId = 0;
 
-export function LiveFeed({ guildId }: { guildId: string }) {
+export function LiveFeed({ guildId, wsToken }: { guildId: string; wsToken: string }) {
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const [connected, setConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const socket = io(API_URL, { path: "/ws", transports: ["websocket"] });
+    if (!wsToken) {
+      setError("Kein Zugriff");
+      return;
+    }
+
+    // Der Server prüft das Token beim Handshake und die Gildenzugehörigkeit
+    // beim Beitritt — früher konnte jeder anonyme Client jedem Raum beitreten.
+    const socket = io(API_URL, {
+      path: "/ws",
+      transports: ["websocket"],
+      auth: { token: wsToken },
+    });
 
     socket.on("connect", () => {
       setConnected(true);
-      socket.emit("join:guild", guildId);
+      setError(null);
+      socket.emit("join:guild", guildId, (res: { ok: boolean; error?: string }) => {
+        if (!res?.ok) setError(res?.error ?? "Beitritt abgelehnt");
+      });
+    });
+
+    socket.on("connect_error", (err: Error) => {
+      setConnected(false);
+      setError(err.message);
     });
 
     socket.on("disconnect", () => setConnected(false));
@@ -61,7 +81,7 @@ export function LiveFeed({ guildId }: { guildId: string }) {
     return () => {
       socket.disconnect();
     };
-  }, [guildId]);
+  }, [guildId, wsToken]);
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
@@ -76,7 +96,9 @@ export function LiveFeed({ guildId }: { guildId: string }) {
           {connected ? "Verbunden" : "Getrennt"}
         </span>
       </div>
-      {events.length === 0 ? (
+      {error ? (
+        <p className="text-xs text-amber-500">{error}</p>
+      ) : events.length === 0 ? (
         <p className="text-xs text-zinc-600">Warte auf Events…</p>
       ) : (
         <ul className="space-y-1">

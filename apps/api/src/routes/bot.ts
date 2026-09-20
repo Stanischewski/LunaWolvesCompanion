@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { guildSettings, players, characters, raidEvents, raidSignups } from "../db/schema.js";
+import { guildIdParams, raidIdParams, discordIdParams } from "../lib/schemas.js";
 
 async function requireBotSecret(request: FastifyRequest, reply: FastifyReply) {
   const botSecret = process.env.BOT_SECRET;
@@ -38,11 +39,13 @@ async function doSignup(raidId: string, characterId: string, role: "tank" | "hea
 
 export async function botRoutes(app: FastifyInstance) {
   const guard = { onRequest: [requireBotSecret] };
+  const guildGuard = { ...guard, schema: { params: guildIdParams } };
+  const raidGuard = { ...guard, schema: { params: raidIdParams } };
 
   // GET /bot/guilds/:guildId/settings — raidChannelId + dkpChannelId ohne Rollenprüfung
   app.get<{ Params: { guildId: string } }>(
     "/bot/guilds/:guildId/settings",
-    guard,
+    guildGuard,
     async (request) => {
       const { guildId } = request.params;
       const settings = await db.query.guildSettings.findFirst({
@@ -55,7 +58,7 @@ export async function botRoutes(app: FastifyInstance) {
   // PATCH /bot/guilds/:guildId/dkp-message — DKP-Board-Nachrichten-ID speichern
   app.patch<{ Params: { guildId: string }; Body: { dkpMessageId: string | null } }>(
     "/bot/guilds/:guildId/dkp-message",
-    guard,
+    guildGuard,
     async (request) => {
       const { guildId } = request.params;
       const { dkpMessageId } = request.body;
@@ -73,7 +76,7 @@ export async function botRoutes(app: FastifyInstance) {
   // PATCH /bot/raids/:raidId/calendar-message — Discord-Nachrichten-ID pro Raid speichern
   app.patch<{ Params: { raidId: string }; Body: { calendarMessageId: string | null } }>(
     "/bot/raids/:raidId/calendar-message",
-    guard,
+    raidGuard,
     async (request, reply) => {
       const { raidId } = request.params;
       const { calendarMessageId } = request.body;
@@ -90,7 +93,7 @@ export async function botRoutes(app: FastifyInstance) {
   // GET /bot/players/:discordId/characters — verknüpfte Charaktere eines Discord-Nutzers
   app.get<{ Params: { discordId: string } }>(
     "/bot/players/:discordId/characters",
-    guard,
+    { ...guard, schema: { params: discordIdParams } },
     async (request) => {
       const player = await db.query.players.findFirst({
         where: eq(players.discordId, request.params.discordId),
@@ -109,7 +112,7 @@ export async function botRoutes(app: FastifyInstance) {
   app.post<{
     Params: { raidId: string };
     Body: { discordId: string; role: "tank" | "heal" | "dps" };
-  }>("/bot/raids/:raidId/signup", guard, async (request, reply) => {
+  }>("/bot/raids/:raidId/signup", raidGuard, async (request, reply) => {
     const { raidId } = request.params;
     const { discordId, role } = request.body;
 
@@ -142,7 +145,7 @@ export async function botRoutes(app: FastifyInstance) {
   app.post<{
     Params: { raidId: string };
     Body: { characterId: string; role: "tank" | "heal" | "dps"; discordId: string };
-  }>("/bot/raids/:raidId/signup-by-char", guard, async (request, reply) => {
+  }>("/bot/raids/:raidId/signup-by-char", raidGuard, async (request, reply) => {
     const { raidId } = request.params;
     const { characterId, role, discordId } = request.body;
 
@@ -173,7 +176,7 @@ export async function botRoutes(app: FastifyInstance) {
   app.post<{
     Params: { raidId: string };
     Body: { discordId: string };
-  }>("/bot/raids/:raidId/unregister", guard, async (request) => {
+  }>("/bot/raids/:raidId/unregister", raidGuard, async (request) => {
     const { raidId } = request.params;
     const { discordId } = request.body;
 
