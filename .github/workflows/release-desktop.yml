@@ -37,6 +37,25 @@ jobs:
           jq ".version = \"$VERSION\"" apps/desktop/src-tauri/tauri.conf.json > tmp.json
           mv tmp.json apps/desktop/src-tauri/tauri.conf.json
 
+      # Release-Text aus .github/release-notes/<tag>.md, falls hinterlegt.
+      # Ohne Datei bleibt ein knapper Standardtext stehen, damit die
+      # Release-Seite nicht leer ist.
+      - name: Release-Notes einlesen
+        id: notes
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag_name }}"
+          FILE=".github/release-notes/${TAG}.md"
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            if [ -f "$FILE" ]; then
+              cat "$FILE"
+            else
+              echo "Desktop-Agent ${TAG}. Installer siehe Assets."
+            fi
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Tauri-App bauen und Artifacts hochladen
         uses: tauri-apps/tauri-action@v0
         env:
@@ -46,3 +65,8 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: ${{ github.event.release.tag_name || inputs.tag_name }}
+          # Ohne releaseName legt tauri-action keinen neuen Release an und
+          # bricht mit "Release not found or created" ab. Das fiel nie auf,
+          # solange der Release vorher von Hand existierte.
+          releaseName: ${{ github.event.release.tag_name || inputs.tag_name }}
+          releaseBody: ${{ steps.notes.outputs.body }}
