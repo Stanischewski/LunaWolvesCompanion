@@ -10,10 +10,12 @@
  *     unterschiedlich — ein Nutzer koennte den Cooldown durch Wiederholung
  *     umgehen, je nachdem welcher Worker antwortet.
  *
- * Ist REDIS_URL gesetzt, liegen die Werte in Redis (CT 201 ist laut
- * deploy/lxc/README.md bereitgestellt, wurde bisher aber von keiner App
- * genutzt). Ohne REDIS_URL greift ein LRU-Speicher mit fester Obergrenze —
- * gleiches Verhalten im Einzelprozess, nur eben nicht geteilt.
+ * Ist REDIS_URL gesetzt, liegen die Werte in Redis. Ohne REDIS_URL greift ein
+ * LRU-Speicher mit fester Obergrenze — im Einzelprozess gleichwertig, nur eben
+ * nicht geteilt. Im Ein-Container-Betrieb laeuft genau ein API-Prozess
+ * (deploy/lxc/ecosystem.config.cjs, instances: 1), darum ist Redis dort
+ * optional. Ab instances > 1 wird es zur Pflicht: sonst hat jeder Worker
+ * seinen eigenen Rollen-Cache und seinen eigenen Sync-Cooldown.
  */
 
 import type { Redis } from "ioredis";

@@ -13,6 +13,17 @@ Die Companion App erweitert das WoW Gilden-Addon um eine externe Plattform, die 
 
 ### Infrastruktur (Proxmox VE + LXC Container)
 
+> **Überholt.** Die hier beschriebene Aufteilung auf sechs Container
+> (CT 200–205) war der ursprüngliche Entwurf. Betrieben wird stattdessen
+> **ein** App-Container mit API, Bot und Web unter PM2, dazu ein bestehender
+> PostgreSQL-Container. Redis und Uptime Kuma entfallen.
+>
+> Maßgeblich ist `deploy/lxc/README.md`. Die Abschnitte zu Container-Zuschnitt,
+> Ports, internem Netz und Deployment in diesem Dokument beschreiben noch den
+> alten Stand; die Aussagen zu Datenmodell, Datenflüssen und Komponenten
+> gelten weiter.
+
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Proxmox VE Host                                            │
