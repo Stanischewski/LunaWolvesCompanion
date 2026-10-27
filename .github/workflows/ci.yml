@@ -65,17 +65,49 @@ jobs:
       - name: Tests
         run: pnpm run test
 
-      # Die Migrationen werden gegen eine leere Datenbank eingespielt. Das
-      # fängt Syntaxfehler und Reihenfolgeprobleme ab, bevor sie beim Deploy
-      # auf die Produktionsdatenbank treffen.
-      - name: Migrationen einspielen
+      # Reihenfolge und Vollständigkeit des Journals, ohne Datenbank.
+      # drizzle-kit merkt sich beim Anwenden den when-Wert der Migration und
+      # wendet später nur noch an, was DARÜBER liegt. Ein Eintrag mit einem
+      # when-Wert unter dem bereits erreichten Maximum wird deshalb für immer
+      # still übersprungen — kein Fehler, nur eine fehlende Spalte, die erst
+      # im Betrieb als HTTP 500 auffällt.
+      - name: Journal-Zeitstempel prüfen
+        working-directory: apps/api
+        run: |
+          node -e "
+            const j = require('./drizzle/meta/_journal.json');
+            const bad = [];
+            let prev = null;
+            for (const e of j.entries) {
+              if (prev !== null && e.when <= prev) bad.push(e.tag + ' (' + e.when + ' <= ' + prev + ')');
+              prev = e.when;
+            }
+            if (bad.length) {
+              console.error('::error::when-Werte in drizzle/meta/_journal.json steigen nicht strikt: ' + bad.join(', '));
+              process.exit(1);
+            }
+            console.log(j.entries.length + ' Einträge, strikt monoton steigend.');
+          "
+
+      # Mit DEM Werkzeug einspielen, das auch beim Deploy läuft. Eine
+      # Shell-Schleife über die SQL-Dateien prüft nur das SQL und übergeht
+      # genau die Journal-Auswertung, an der ein Deploy scheitern kann.
+      - name: Migrationen einspielen (wie beim Deploy)
         working-directory: apps/api
         run: |
           psql "$DATABASE_URL" -q -c "CREATE ROLE lw_app LOGIN;"
-          for f in $(ls drizzle/*.sql | sort); do
-            echo "→ $f"
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
-          done
+          pnpm db:migrate
+
+      - name: Jede Migration muss verbucht sein
+        working-directory: apps/api
+        run: |
+          expected=$(node -e "console.log(require('./drizzle/meta/_journal.json').entries.length)")
+          actual=$(psql "$DATABASE_URL" -tAc 'SELECT count(*) FROM drizzle.__drizzle_migrations')
+          echo "Journal: $expected — verbucht: $actual"
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::drizzle-kit hat $actual von $expected Migrationen angewendet. Das Schema ist unvollständig."
+            exit 1
+          fi
 
       - name: Schema gegen Migrationen prüfen
         working-directory: apps/api
@@ -97,6 +129,27 @@ jobs:
             exit 1
           fi
           echo "Alle Tabellen vorhanden."
+
+          # Spalten der jüngsten Migrationen. Der Tabellen-Check oben bleibt
+          # grün, wenn nur eine Spalte fehlt — genau das war der Fall, als
+          # characters.left_guild_at fehlte und der Sync mit 500 abbrach.
+          missing_cols=$(psql "$DATABASE_URL" -tAc "
+            SELECT string_agg(spec, ', ') FROM unnest(ARRAY[
+              'characters.left_guild_at',
+              'dkp_seasons.started_at',
+              'dkp_seasons.archived_at'
+            ]) AS spec
+            WHERE NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema='public'
+                AND table_name = split_part(spec, '.', 1)
+                AND column_name = split_part(spec, '.', 2)
+            );")
+          if [ -n "$missing_cols" ]; then
+            echo "::error::Spalten fehlen nach den Migrationen: $missing_cols"
+            exit 1
+          fi
+          echo "Alle geprüften Spalten vorhanden."
 
   lua:
     name: Addon-Syntax
