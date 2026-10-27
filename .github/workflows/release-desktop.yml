@@ -70,3 +70,36 @@ jobs:
           # solange der Release vorher von Hand existierte.
           releaseName: ${{ github.event.release.tag_name || inputs.tag_name }}
           releaseBody: ${{ steps.notes.outputs.body }}
+
+      # Denselben Installer noch einmal unter einem festen Namen anhängen.
+      # tauri-action benennt ihn mit Version ("..._0.2.1_x64-setup.exe"), damit
+      # gibt es keine Adresse, die dauerhaft auf die neueste Fassung zeigt.
+      # Mit festem Namen funktioniert
+      #   releases/latest/download/LunaWolvesAgent-Setup.exe
+      # als Ein-Klick-Link, der in der README stehen bleiben kann.
+      #
+      # Die versionierten Dateien bleiben erhalten — der Tauri-Updater
+      # verweist aus latest.json auf genau sie.
+      - name: Installer unter festem Namen anhängen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag_name }}"
+          BUNDLE=apps/desktop/src-tauri/target/release/bundle
+
+          SETUP=$(find "$BUNDLE/nsis" -name '*-setup.exe' | head -1)
+          if [ -z "$SETUP" ]; then
+            echo "::error::Kein NSIS-Installer unter $BUNDLE/nsis gefunden."
+            exit 1
+          fi
+          cp "$SETUP" LunaWolvesAgent-Setup.exe
+          gh release upload "$TAG" LunaWolvesAgent-Setup.exe --clobber
+          echo "LunaWolvesAgent-Setup.exe <- $(basename "$SETUP")"
+
+          MSI=$(find "$BUNDLE/msi" -name '*.msi' | head -1)
+          if [ -n "$MSI" ]; then
+            cp "$MSI" LunaWolvesAgent.msi
+            gh release upload "$TAG" LunaWolvesAgent.msi --clobber
+            echo "LunaWolvesAgent.msi <- $(basename "$MSI")"
+          fi
