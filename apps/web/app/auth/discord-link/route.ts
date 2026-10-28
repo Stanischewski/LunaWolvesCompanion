@@ -2,6 +2,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 const API_URL = process.env.API_URL ?? "http://localhost:3001";
+// Fuer den Browser: API_URL ist die Adresse, unter der dieser Server die API
+// erreicht (im LXC-Deployment http://127.0.0.1:3001) - von aussen nicht.
+const PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 /**
  * Holt serverseitig ein kurzlebiges Ticket und schickt den Browser damit zur
@@ -25,5 +28,5 @@ export async function GET() {
     return redirect("/dashboard?discord_error=api");
   }
 
-  return redirect(`${API_URL}/auth/discord/link?ticket=${encodeURIComponent(ticket)}`);
+  return redirect(`${PUBLIC_API_URL}/auth/discord/link?ticket=${encodeURIComponent(ticket)}`);
 }
