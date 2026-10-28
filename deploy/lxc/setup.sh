@@ -192,7 +192,7 @@ pm2 startOrReload "$ECOSYSTEM" --only "$ONLY" --update-env
 
 step "Autostart einrichten ..."
 pm2 save
-pm2 startup systemd -u root --hp /root | tail -1 | bash
+pm2 startup systemd -u root --hp /root
 
 pm2 status
 
