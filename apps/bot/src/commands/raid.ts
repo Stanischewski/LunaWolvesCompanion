@@ -46,12 +46,6 @@ export const raidCommand: Command = {
         )
         .addStringOption((opt) =>
           opt
-            .setName("character")
-            .setDescription("Eigener Charakter (nur nötig bei mehreren)")
-            .setAutocomplete(true),
-        )
-        .addStringOption((opt) =>
-          opt
             .setName("role")
             .setDescription("Rolle")
             .setRequired(true)
@@ -60,6 +54,12 @@ export const raidCommand: Command = {
               { name: "💚 Heiler", value: "heal" },
               { name: "⚔️ DPS", value: "dps" },
             ),
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName("character")
+            .setDescription("Eigener Charakter (nur nötig bei mehreren)")
+            .setAutocomplete(true),
         ),
     )
     .addSubcommand((sub) =>
